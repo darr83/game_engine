@@ -33,9 +33,18 @@ Drag premade objects (player, ground, moving platforms, coins, enemies, springs,
 
   ![Behaviour settings](docs/object-behaviour.png)
 
+- **Sound and music** (the **Sounds** tab):
+  - Make retro sound effects from presets (Coin, Jump, Hit, Explosion, Power-up, Laser, Blip). Each click gives a new variation, or press "Surprise me". Tune them with sliders for pitch, slide, vibrato, pitch jump and fade, with a waveform view.
+  - Import your own WAV, OGG or MP3 files.
+  - Pick each level's music and its volume in the level settings.
+  - In events: *Play sound* (with volume, pitch and random pitch variation), *Play music*, *Stop music*, *Set music volume*, plus the conditions *Object jumps* and *Object lands*.
+  - The sample game comes with sound effects and a short chiptune theme.
+
+  ![Sounds](docs/editor-sounds.png)
+
 - **Visual event sheet**: rows of "when these conditions are true → do these actions". For example, *Player touches Coin → Destroy the other object, Add 1 to Score*. Turn on **Show as C#** to see the same sheet as C# code.
 - **Variables** such as Score, shown on screen while playing.
-- **Play** opens the game in its own window (Esc stops, R restarts).
+- **Play** opens the game in its own window (Esc stops, R restarts, M mutes).
 
   ![Playing the sample level](docs/game.png)
 
@@ -114,11 +123,11 @@ tests/
 
 - The game runs at a fixed 60 ticks per second. The same `World` class drives the editor's Play window, exported games and the tests.
 - The UI uses [Avalonia](https://avaloniaui.net/), so one codebase runs on Windows, macOS and Linux.
+- Audio plays through OpenAL Soft (via Silk.NET); OGG and MP3 are decoded by NVorbis and NLayer. If a computer has no sound device, games run silently.
 - Projects are saved as readable JSON.
 
 ## Roadmap
 
-- Sound effects and music
 - Separate collision boxes and origin points for sprites
 - Write your own C# code inside events, compiled with Roslyn
 - More events: timers per object, camera shake, follow another object

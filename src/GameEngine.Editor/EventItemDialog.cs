@@ -142,6 +142,7 @@ public sealed class EventItemDialog : Window
             {
                 ParamType.ObjectType => Combo(_project.Objects.Select(o => o.Id).ToArray(), value, Set, id => _project.TypeName(id)),
                 ParamType.YesNo => Combo(new[] { "Yes", "No" }, value, Set),
+                ParamType.Sound => SoundPicker(value, Set),
                 ParamType.ObjectVariable => Suggest(value, Set, _project.Objects.SelectMany(o => o.Variables.Keys).Distinct(),
                     "Each object keeps its own copy. Add object variables in the object editor."),
                 ParamType.Animation => Suggest(value, Set, _project.Objects.SelectMany(o => o.Animations.Select(a => a.Name)).Distinct(),
@@ -188,6 +189,24 @@ public sealed class EventItemDialog : Window
         panel.Children.Add(box);
         panel.Children.Add(Ui.Label("A new name creates a new variable.", 12, UiTheme.Muted));
         return panel;
+    }
+
+    Control SoundPicker(string value, Action<string> set)
+    {
+        var names = _project.Sounds.Select(s => s.Name).ToArray();
+        if (names.Length == 0) return Ui.Label("This game has no sounds yet. Add some on the Sounds tab.", 13, UiTheme.Muted);
+        // default to the first sound so the action works straight away
+        if (Array.IndexOf(names, value) < 0) set(names[0]);
+        var combo = Combo(names, value, set);
+        var play = Ui.IconButton(Ui.Icons.Play, "Listen", () =>
+        {
+            if (combo.SelectedIndex >= 0 && _project.FindSound(names[combo.SelectedIndex]) is { } s) AudioPlayer.Shared.Play(s);
+        }, iconBrush: UiTheme.Play);
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        row.Children.Add(combo);
+        Grid.SetColumn(play, 1);
+        row.Children.Add(play);
+        return row;
     }
 
     static Control Suggest(string value, Action<string> set, IEnumerable<string> suggestions, string hint)

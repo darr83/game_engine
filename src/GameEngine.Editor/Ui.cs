@@ -35,6 +35,7 @@ public static class Ui
         public const string Copy = "M8 3h11v13H8z M5 7h2v12h9v2H5z";
         public const string Left = "M15 5 L7 12 L15 19 Z";
         public const string Right = "M9 5 L17 12 L9 19 Z";
+        public const string Stop = "M6 6h12v12H6z";
         public const string Fit = "M4 4h6v2H6v4H4z M14 4h6v6h-2V6h-4z M4 14h2v4h4v2H4z M18 14h2v6h-6v-2h4z";
     }
 

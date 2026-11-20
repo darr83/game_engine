@@ -42,6 +42,7 @@ public sealed class Entity
     public bool Visible = true;
     public bool OnGround;
     public int JumpsUsed;
+    public bool JustJumped, JustLanded;
 
     /// <summary>This object's own variables (e.g. Health), started from its type's defaults.</summary>
     public Dictionary<string, double> Vars { get; init; } = new();
@@ -121,6 +122,10 @@ public sealed class World
     public long Tick => _tick;
     public int Restarts { get; private set; }
 
+    /// <summary>Sounds to play since the host last emptied this list.</summary>
+    public List<AudioCommand> Audio { get; } = new();
+    string _music = "";
+
     /// <summary>Advances by real elapsed time using fixed 60 Hz ticks.</summary>
     public void Update(double elapsedSeconds)
     {
@@ -143,6 +148,7 @@ public sealed class World
             e.PrevX = e.X;
             e.PrevY = e.Y;
             e.AnimTime += Dt;
+            e.JustJumped = e.JustLanded = false;
         }
 
         UpdatePlatforms();
@@ -204,6 +210,11 @@ public sealed class World
         _tick = 0;
         _nextId = 1;
         _varsAtLevelStart = new Dictionary<string, double>(Vars);
+        if (Level.Music != _music)
+        {
+            _music = Level.Music;
+            Audio.Add(_music.Length == 0 ? new StopMusicCommand() : new PlayMusicCommand(_music, Level.MusicVolume));
+        }
         foreach (var inst in Level.Instances)
         {
             var def = _project.FindType(inst.Type);
@@ -293,6 +304,7 @@ public sealed class World
         if (groundJump || airJump)
         {
             e.VY = -jump;
+            e.JustJumped = true;
             e.JumpBuffer = 0;
             e.Coyote = 0;
             e.JumpsUsed = used + 1;
@@ -304,7 +316,9 @@ public sealed class World
         var g = gravity * (e.VY < 0 && !Input.JumpHeld ? 2.5 : 1);
         e.VY = Math.Min(e.VY + g * Dt, MaxFall);
 
+        var wasOnGround = e.OnGround;
         MoveAndCollide(e, out _);
+        if (!wasOnGround && e.OnGround && _tick > 0) e.JustLanded = true;
 
         // springs
         foreach (var s in _entities)
@@ -504,6 +518,8 @@ public sealed class World
             case "Stomps": return Pairs((a, b) => a.Overlaps(b) && a.VY > 0 && a.PrevY + a.H <= b.Y + b.H * 0.5);
             case "FallsOut": return Singles(a => a.Y > LevelHeight + 16);
             case "IsOnGround": return Singles(a => a.OnGround);
+            case "Jumps": return Singles(a => a.JustJumped);
+            case "Lands": return Singles(a => a.JustLanded);
             case "IsMoving": return Singles(a => Math.Abs(a.X - a.PrevX) > 0.01 || Math.Abs(a.Y - a.PrevY) > 0.01);
             case "CompareObjectVar": return Singles(a => Compare(a.Vars.GetValueOrDefault(c.Arg("Var")), c.Arg("Op", "="), c.Num("Value")));
             case "Random": return If(_random.NextDouble() * 100 < c.Num("Percent", 50));
@@ -584,6 +600,25 @@ public sealed class World
                 break;
             case "SetVar":
                 Vars[a.Arg("Var")] = a.Num("Value");
+                break;
+            case "PlaySound":
+            {
+                var pitch = a.Num("Pitch", 100) / 100;
+                var vary = a.Num("Vary", 0) / 100;
+                if (vary > 0) pitch *= 1 + (_random.NextDouble() * 2 - 1) * vary;
+                Audio.Add(new PlaySoundCommand(a.Arg("Sound"), a.Num("Volume", 100) / 100, Math.Clamp(pitch, 0.1, 4)));
+                break;
+            }
+            case "PlayMusic":
+                _music = a.Arg("Sound");
+                Audio.Add(new PlayMusicCommand(_music, a.Num("Volume", 60) / 100));
+                break;
+            case "StopMusic":
+                _music = "";
+                Audio.Add(new StopMusicCommand());
+                break;
+            case "MusicVolume":
+                Audio.Add(new MusicVolumeCommand(a.Num("Volume", 30) / 100));
                 break;
             case "ShowMessage":
                 Message = FormatText(a.Arg("Text"));

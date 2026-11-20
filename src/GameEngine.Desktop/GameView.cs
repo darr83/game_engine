@@ -52,6 +52,7 @@ public sealed class GameView : Control
         if (!_running) return;
         var now = _clock.Elapsed;
         World.Update((now - _last).TotalSeconds);
+        if (World.Audio.Count > 0) AudioPlayer.Shared.Process(World.Project, World.Audio);
         _last = now;
         InvalidateVisual();
         RequestFrame();
@@ -105,7 +106,7 @@ public sealed class GameWindow : Window
         _project = project;
         _startLevel = startLevel;
         _fromEditor = fromEditor;
-        Title = fromEditor ? $"{project.Name} — Playing (Esc to stop, R to restart)" : project.Name;
+        Title = fromEditor ? $"{project.Name} — Playing (Esc to stop, R to restart, M to mute)" : project.Name;
         Width = 1280;
         Height = 720;
         MinWidth = 480;
@@ -115,6 +116,7 @@ public sealed class GameWindow : Window
         View = new GameView(new World(project.Clone(), startLevel));
         Content = View;
         Activated += (_, _) => View.Focus();
+        Closed += (_, _) => AudioPlayer.Shared.StopAll();
         // Tunnel so the window sees Esc/R/F11 before the game view handles them.
         AddHandler(KeyDownEvent, OnWindowKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
     }
@@ -132,6 +134,11 @@ public sealed class GameWindow : Window
         {
             e.Handled = true;
             View.Reset(new World(_project.Clone(), _startLevel));
+        }
+        else if (e.Key == Key.M && e.KeyModifiers == KeyModifiers.None && _fromEditor)
+        {
+            e.Handled = true;
+            AudioPlayer.Shared.Muted = !AudioPlayer.Shared.Muted;
         }
         else if (e.Key == Key.F11 || (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Alt)))
         {

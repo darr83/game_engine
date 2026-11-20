@@ -166,6 +166,7 @@ public sealed class Inspector : UserControl
         _stack.Children.Add(size);
 
         _stack.Children.Add(Ui.Field("Sky colour", SkyPicker()));
+        MusicPicker();
 
         var deleteLevel = new Button { Content = "Delete level", Foreground = UiTheme.Danger, IsEnabled = _project.Levels.Count > 1 };
         deleteLevel.Click += (_, _) =>
@@ -198,6 +199,28 @@ public sealed class Inspector : UserControl
             Rebuild();
         }, "Add variable");
         _stack.Children.Add(add);
+    }
+
+    void MusicPicker()
+    {
+        var names = new List<string> { "None" };
+        names.AddRange(_project.Sounds.Select(s => s.Name));
+        var combo = new ComboBox
+        {
+            ItemsSource = names,
+            SelectedIndex = Math.Max(0, names.IndexOf(_level.Music)),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        combo.SelectionChanged += (_, _) =>
+        {
+            var music = combo.SelectedIndex <= 0 ? "" : names[combo.SelectedIndex];
+            if (music != _level.Music) Edit(() => _level.Music = music);
+        };
+        var volume = new Slider { Minimum = 0, Maximum = 100, Value = _level.MusicVolume * 100 };
+        volume.ValueChanged += (_, e) => Edit(() => _level.MusicVolume = e.NewValue / 100);
+        _stack.Children.Add(Ui.Field("Music", combo));
+        if (_project.Sounds.Count == 0) _stack.Children.Add(Ui.Label("Add or import sounds on the Sounds tab.", 12, UiTheme.Muted));
+        else _stack.Children.Add(Ui.Field("Music volume", volume));
     }
 
     Control SkyPicker()

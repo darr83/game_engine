@@ -2,12 +2,18 @@ using GameEngine.Core;
 
 namespace GameEngine.Editor;
 
-/// <summary>Undo history as whole-project snapshots. Projects are small, so this stays simple.</summary>
+/// <summary>
+/// Undo history as whole-project snapshots. Imported audio is shared between snapshots
+/// rather than copied, so long music files don't fill memory.
+/// </summary>
 public sealed class UndoStack
 {
     const int Limit = 200;
-    readonly LinkedList<(string json, int level)> _undo = new();
-    readonly Stack<(string json, int level)> _redo = new();
+
+    sealed record Snapshot(string Json, byte[]?[] Audio, int Level);
+
+    readonly LinkedList<Snapshot> _undo = new();
+    readonly Stack<Snapshot> _redo = new();
 
     public void Clear()
     {
@@ -15,9 +21,24 @@ public sealed class UndoStack
         _redo.Clear();
     }
 
+    static Snapshot Capture(Project p, int level)
+    {
+        var audio = p.Sounds.Select(s => s.Data).ToArray();
+        foreach (var s in p.Sounds) s.Data = null;
+        try { return new Snapshot(ProjectIO.ToJson(p), audio, level); }
+        finally { for (var i = 0; i < audio.Length; i++) p.Sounds[i].Data = audio[i]; }
+    }
+
+    static (Project, int) Rebuild(Snapshot snap)
+    {
+        var p = ProjectIO.FromJson(snap.Json);
+        for (var i = 0; i < p.Sounds.Count && i < snap.Audio.Length; i++) p.Sounds[i].Data = snap.Audio[i];
+        return (p, snap.Level);
+    }
+
     public void Push(Project current, int level)
     {
-        _undo.AddLast((ProjectIO.ToJson(current), level));
+        _undo.AddLast(Capture(current, level));
         if (_undo.Count > Limit) _undo.RemoveFirst();
         _redo.Clear();
     }
@@ -26,16 +47,16 @@ public sealed class UndoStack
     {
         if (_undo.Last is not { } last) return null;
         _undo.RemoveLast();
-        _redo.Push((ProjectIO.ToJson(current), level));
-        return (ProjectIO.FromJson(last.Value.json), last.Value.level);
+        _redo.Push(Capture(current, level));
+        return Rebuild(last.Value);
     }
 
     public (Project, int)? Redo(Project current, int level)
     {
         if (_redo.Count == 0) return null;
         var next = _redo.Pop();
-        _undo.AddLast((ProjectIO.ToJson(current), level));
-        return (ProjectIO.FromJson(next.json), next.level);
+        _undo.AddLast(Capture(current, level));
+        return Rebuild(next);
     }
 }
 

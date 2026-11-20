@@ -21,6 +21,7 @@ public sealed class MainWindow : Window
     readonly ObjectLibrary _library = new();
     readonly Inspector _inspector = new();
     readonly EventSheetView _events = new();
+    readonly SoundsView _sounds = new();
     readonly ComboBox _levelPicker = new() { MinWidth = 170 };
     readonly TextBlock _title = new() { FontSize = 13, Foreground = UiTheme.Muted, VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock _status = new() { FontSize = 12, Foreground = UiTheme.Muted, VerticalAlignment = VerticalAlignment.Center };
@@ -58,6 +59,8 @@ public sealed class MainWindow : Window
         var content = new Grid();
         content.Children.Add(_levelArea);
         content.Children.Add(_events);
+        _sounds.IsVisible = false;
+        content.Children.Add(_sounds);
         Grid.SetRow(content, 1);
         center.Children.Add(content);
 
@@ -138,7 +141,7 @@ public sealed class MainWindow : Window
 
     Control CenterBar()
     {
-        var tabs = Ui.Segmented(new[] { "Level", "Event sheet" }, 0, ShowTab, out _selectTab);
+        var tabs = Ui.Segmented(new[] { "Level", "Event sheet", "Sounds" }, 0, ShowTab, out _selectTab);
 
         var grid = new SpacedGrid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(12, 8), ColumnGap = 12 };
         grid.Children.Add(tabs);
@@ -229,6 +232,8 @@ public sealed class MainWindow : Window
         _inspector.LevelsChanged += () => { _levelIndex = Math.Min(_levelIndex, _project.Levels.Count - 1); RefreshLevels(); };
         _inspector.DeleteRequested += () => _canvas.DeleteSelected();
 
+        _sounds.Changing += Snapshot;
+        _sounds.Changed += MarkDirty;
         _events.Changing += Snapshot;
         _events.Changed += () => { EnsureVariables(); MarkDirty(); };
 
@@ -289,7 +294,9 @@ public sealed class MainWindow : Window
         _levelTools.IsVisible = index == 0;
         _events.IsVisible = index == 1;
         _eventTools.IsVisible = index == 1;
+        _sounds.IsVisible = index == 2;
         if (index == 1) _events.Show(_project);
+        if (index == 2) _sounds.Show(_project);
     }
 
     void SetTool(Tool tool)
@@ -320,6 +327,7 @@ public sealed class MainWindow : Window
         RefreshLevels();
         _events.Show(_project);
         _library.Show(_project);
+        _sounds.Show(_project);
         UpdateTitle();
     }
 
@@ -377,6 +385,7 @@ public sealed class MainWindow : Window
         RefreshLevels();
         _events.Show(_project);
         _library.Show(_project);
+        if (_sounds.IsVisible) _sounds.Show(_project);
         if (selectedId is { } id) _canvas.Select(CurrentLevel.Instances.FirstOrDefault(i => i.Id == id));
         MarkDirty();
     }
@@ -478,7 +487,9 @@ public sealed class MainWindow : Window
     {
         var window = new GameWindow(_project, _levelIndex, fromEditor: true);
         window.Show(this);
-        SetStatus("Playing. Arrow keys or A/D to run, Space to jump. Esc stops, R restarts.");
+        SetStatus(AudioPlayer.Shared.Available
+            ? "Playing. Arrow keys or A/D to run, Space to jump. Esc stops, R restarts, M mutes."
+            : "Playing without sound (" + (AudioPlayer.Shared.Error ?? "no audio device") + "). Esc stops, R restarts.");
     }
 
     async Task NewProject()

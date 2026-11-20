@@ -20,6 +20,8 @@ public enum ParamType
     Animation,
     /// <summary>Yes or No.</summary>
     YesNo,
+    /// <summary>One of the project's sounds.</summary>
+    Sound,
 }
 
 public sealed record ParamDef(string Key, string Label, ParamType Type, string Default);
@@ -74,6 +76,10 @@ public static class EventCatalog
             new[] { new ParamDef("A", "Object", ParamType.ObjectType, "Player") }),
         new("IsOnGround", "Object is on the ground", "Objects", "{A} is on the ground",
             new[] { new ParamDef("A", "Object", ParamType.ObjectType, "Player") }),
+        new("Jumps", "Object jumps", "Objects", "{A} jumps",
+            new[] { new ParamDef("A", "Object", ParamType.ObjectType, "Player") }),
+        new("Lands", "Object lands", "Objects", "{A} lands on the ground",
+            new[] { new ParamDef("A", "Object", ParamType.ObjectType, "Player") }),
         new("IsMoving", "Object is moving", "Objects", "{A} is moving",
             new[] { new ParamDef("A", "Object", ParamType.ObjectType, "Player") }),
         new("CompareObjectVar", "Compare object variable", "Objects", "{A}'s {Var} {Op} {Value}",
@@ -119,6 +125,14 @@ public static class EventCatalog
             new[] { new ParamDef("Var", "Variable", ParamType.Variable, "Score"), new ParamDef("Value", "Amount", ParamType.Number, "1") }),
         new("SetVar", "Set variable", "Variables", "Set {Var} to {Value}",
             new[] { new ParamDef("Var", "Variable", ParamType.Variable, "Score"), new ParamDef("Value", "Value", ParamType.Number, "0") }),
+
+        new("PlaySound", "Play sound", "Sound", "Play sound \"{Sound}\"",
+            new[] { new ParamDef("Sound", "Sound", ParamType.Sound, ""), new ParamDef("Volume", "Volume (%)", ParamType.Number, "100"), new ParamDef("Pitch", "Pitch (%)", ParamType.Number, "100"), new ParamDef("Vary", "Random pitch variation (%)", ParamType.Number, "0") }),
+        new("PlayMusic", "Play music", "Sound", "Play music \"{Sound}\"",
+            new[] { new ParamDef("Sound", "Music", ParamType.Sound, ""), new ParamDef("Volume", "Volume (%)", ParamType.Number, "60") }),
+        new("StopMusic", "Stop music", "Sound", "Stop the music", Array.Empty<ParamDef>()),
+        new("MusicVolume", "Set music volume", "Sound", "Set music volume to {Volume}%",
+            new[] { new ParamDef("Volume", "Volume (%)", ParamType.Number, "30") }),
 
         new("ShowMessage", "Show message", "Game", "Show message {Text}",
             new[] { new ParamDef("Text", "Message", ParamType.Text, "Well done!"), new ParamDef("Seconds", "Seconds", ParamType.Number, "2") }),

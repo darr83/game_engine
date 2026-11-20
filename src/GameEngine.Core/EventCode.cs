@@ -67,11 +67,13 @@ public static class EventCode
                     b = vb;
                     break;
                 }
-                case "FallsOut" or "IsOnGround" or "IsMoving" or "CompareObjectVar":
+                case "FallsOut" or "IsOnGround" or "IsMoving" or "CompareObjectVar" or "Jumps" or "Lands":
                 {
                     var test = c.Kind switch
                     {
                         "FallsOut" => "IsBelowLevel",
+                        "Jumps" => "JustJumped",
+                        "Lands" => "JustLanded",
                         "IsOnGround" => "IsOnGround",
                         "IsMoving" => "IsMoving",
                         _ => $"Vars[\"{c.Arg("Var")}\"] {CsOp(c.Arg("Op", "="))} {Num(c.Num("Value"))}",
@@ -137,6 +139,10 @@ public static class EventCode
             "SetVisible" => $"{Target()}.Visible = {(act.Arg("Visible", "Yes") == "No" ? "false" : "true")};",
             "SetObjectVar" => $"{Target()}.Vars[\"{act.Arg("Var")}\"] = {Num(act.Num("Value"))};",
             "AddObjectVar" => $"{Target()}.Vars[\"{act.Arg("Var")}\"] += {Num(act.Num("Value"))};",
+            "PlaySound" => $"Sounds.Play(\"{act.Arg("Sound")}\", volume: {Num(act.Num("Volume", 100) / 100)}, pitch: {Num(act.Num("Pitch", 100) / 100)});",
+            "PlayMusic" => $"Music.Play(\"{act.Arg("Sound")}\", volume: {Num(act.Num("Volume", 60) / 100)});",
+            "StopMusic" => "Music.Stop();",
+            "MusicVolume" => $"Music.Volume = {Num(act.Num("Volume", 30) / 100)};",
             "AddVar" => $"{Identifier(act.Arg("Var"))} += {Num(act.Num("Value"))};",
             "SetVar" => $"{Identifier(act.Arg("Var"))} = {Num(act.Num("Value"))};",
             "ShowMessage" => $"ShowMessage($\"{act.Arg("Text").Replace("\"", "\\\"")}\", seconds: {Num(act.Num("Seconds", 2))});",

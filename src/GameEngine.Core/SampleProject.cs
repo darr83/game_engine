@@ -16,7 +16,45 @@ public static class SampleProject
             Conditions = { new EventItem("Collides", ("A", "Player"), ("B", "Gem")) },
             Actions = { new EventItem("Destroy", ("Target", "B")), new EventItem("AddVar", ("Var", "Score"), ("Value", "10")) },
         });
+        AddSounds(p, withMusic: true);
+        p.Levels[0].Music = "Theme";
         return p;
+    }
+
+    /// <summary>Adds the standard sound effects (and optionally music) and plays them from the events.</summary>
+    static void AddSounds(Project p, bool withMusic)
+    {
+        SoundAsset Sfx(string name, string preset, int seed = 0, double volume = 0.7) =>
+            new() { Name = name, Source = "synth", Synth = Synth.Preset(preset, seed), Volume = volume };
+        p.Sounds.Add(Sfx("Jump", "Jump", volume: 0.5));
+        p.Sounds.Add(Sfx("Coin", "Coin", volume: 0.55));
+        p.Sounds.Add(Sfx("Stomp", "Hit", volume: 0.7));
+        p.Sounds.Add(Sfx("Hurt", "Explosion", 3, volume: 0.7));
+        p.Sounds.Add(Sfx("Gem", "Power-up", volume: 0.5));
+        p.Sounds.Add(Sfx("Spring", "Jump", 5, volume: 0.5));
+        p.Sounds.Add(Sfx("Win", "Power-up", 11, volume: 0.6));
+        if (withMusic)
+            p.Sounds.Add(new SoundAsset { Name = "Theme", Source = "file", FileType = "wav", Data = SampleMusic.RenderWav(), Volume = 0.6 });
+
+        EventItem Play(string sound, double vary = 0) =>
+            new("PlaySound", ("Sound", sound), ("Volume", "100"), ("Pitch", "100"), ("Vary", vary.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        void AddTo(string comment, EventItem action)
+        {
+            foreach (var e in p.Events.Where(e => e.Comment == comment)) e.Actions.Add(action);
+        }
+        AddTo("Collect coins", Play("Coin", 6));
+        AddTo("Gems are worth 10", Play("Gem"));
+        AddTo("Stomp on enemies", Play("Stomp", 8));
+        AddTo("Enemies hurt you from the side", Play("Hurt"));
+        AddTo("Spikes", Play("Hurt"));
+        AddTo("Falling off the world", Play("Hurt"));
+        AddTo("Reach the flag", Play("Win"));
+        p.Events.Insert(0, new GameEvent
+        {
+            Comment = "Jump sound",
+            Conditions = { new EventItem("Jumps", ("A", "Player")) },
+            Actions = { Play("Jump", 4) },
+        });
     }
 
     /// <summary>A custom object made the same way a user would: own sprite, Float behaviour.</summary>
@@ -54,6 +92,7 @@ public static class SampleProject
         Place(level, "Flag", 37 * 16, 15 * 16 - 32);
         p.Levels.Add(level);
         p.Events.AddRange(DefaultEvents());
+        AddSounds(p, withMusic: false);
         return p;
     }
 

@@ -14,6 +14,9 @@ public sealed class Project
     /// <summary>Every kind of object in this game, premade and custom, with their sprites.</summary>
     public List<ObjectType> Objects { get; set; } = new();
 
+    /// <summary>Sound effects and music.</summary>
+    public List<SoundAsset> Sounds { get; set; } = new();
+
     /// <summary>Global variables and their starting values (e.g. Score = 0).</summary>
     public Dictionary<string, double> Variables { get; set; } = new() { ["Score"] = 0 };
 
@@ -22,6 +25,15 @@ public sealed class Project
     public ObjectType? FindType(string id) => Objects.FirstOrDefault(o => o.Id == id);
 
     public string TypeName(string id) => FindType(id)?.Name ?? id;
+
+    public SoundAsset? FindSound(string name) => Sounds.FirstOrDefault(s => s.Name == name);
+
+    public string NewSoundName(string baseName)
+    {
+        var name = baseName;
+        for (var n = 2; FindSound(name) is not null; n++) name = $"{baseName} {n}";
+        return name;
+    }
 
     /// <summary>A new unique id based on a display name, e.g. "Bat", "Bat2".</summary>
     public string NewTypeId(string name)
@@ -54,6 +66,12 @@ public sealed class Level
 
     /// <summary>Sky colour as #RRGGBB.</summary>
     public string Background { get; set; } = "#8ED6FF";
+
+    /// <summary>Name of the sound to loop as this level's music; empty for silence.</summary>
+    public string Music { get; set; } = "";
+
+    /// <summary>0 to 1.</summary>
+    public double MusicVolume { get; set; } = 0.6;
 
     public List<Instance> Instances { get; set; } = new();
 
