@@ -232,13 +232,19 @@ public sealed class MainWindow : Window
         _events.Changing += Snapshot;
         _events.Changed += () => { EnsureVariables(); MarkDirty(); };
 
+        _library.EditRequested += id => _ = EditObject(id);
+        _library.NewRequested += () => _ = NewObject();
+        _library.DuplicateRequested += DuplicateObject;
+        _library.DeleteRequested += DeleteObject;
+        _inspector.EditTypeRequested += id => _ = EditObject(id);
+
         _library.Picked += type =>
         {
             _canvas.PaintType = type;
             SetTool(Tool.Paint);
             ShowTab(0);
             _selectTab(0);
-            SetStatus($"Painting {ObjectCatalog.Get(type).Name}. Click or drag in the level. Right-drag to erase.");
+            SetStatus($"Painting {_project.TypeName(type)}. Click or drag in the level. Right-drag to erase.");
         };
 
         _levelPicker.SelectionChanged += (_, _) =>
@@ -313,6 +319,7 @@ public sealed class MainWindow : Window
         _dirty = false;
         RefreshLevels();
         _events.Show(_project);
+        _library.Show(_project);
         UpdateTitle();
     }
 
@@ -369,6 +376,7 @@ public sealed class MainWindow : Window
         _levelIndex = Math.Clamp(state.level, 0, _project.Levels.Count - 1);
         RefreshLevels();
         _events.Show(_project);
+        _library.Show(_project);
         if (selectedId is { } id) _canvas.Select(CurrentLevel.Instances.FirstOrDefault(i => i.Id == id));
         MarkDirty();
     }
@@ -384,6 +392,84 @@ public sealed class MainWindow : Window
         var name = _path is null ? _project.Name : Path.GetFileNameWithoutExtension(_path);
         _title.Text = $"·  {name}{(_dirty ? " •" : "")}";
         Title = $"{name}{(_dirty ? " •" : "")} — Game_Engine";
+    }
+
+    // ------------------------------------------------------------------ objects
+
+    void ObjectsChanged()
+    {
+        _library.Show(_project);
+        _canvas.InvalidateVisual();
+        _inspector.Show(_project, CurrentLevel, _canvas.Selected);
+        if (_events.IsVisible) _events.Show(_project);
+        MarkDirty();
+    }
+
+    async Task EditObject(string id)
+    {
+        if (_project.FindType(id) is not { } type) return;
+        var result = await ObjectEditorWindow.Edit(this, _project, type);
+        if (result is null) return;
+        Snapshot();
+        var index = _project.Objects.FindIndex(o => o.Id == id);
+        if (index >= 0) _project.Objects[index] = result;
+        ObjectsChanged();
+        SetStatus($"Saved {result.Name}.");
+    }
+
+    async Task NewObject()
+    {
+        var type = new ObjectType
+        {
+            Id = _project.NewTypeId("MyObject"),
+            Name = "My object",
+            Category = "My objects",
+            Behaviours = Behaviour.None,
+            Animations = { new SpriteAnimation { Name = "Default", Frames = { StarterSprite() } } },
+        };
+        var result = await ObjectEditorWindow.Edit(this, _project, type, isNew: true);
+        if (result is null) return;
+        Snapshot();
+        _project.Objects.Add(result);
+        ObjectsChanged();
+        _canvas.PaintType = result.Id;
+        SetTool(Tool.Paint);
+        SetStatus($"Made {result.Name}. Click in the level to place it, or drag it in from the Objects panel.");
+    }
+
+    /// <summary>A simple shape to start drawing over, so a new object is never invisible.</summary>
+    static PixelImage StarterSprite()
+    {
+        var img = new PixelImage(16, 16);
+        img.Fill(2, 2, 12, 12, 0xFF8E5BD9);
+        img.Fill(3, 3, 10, 2, 0xFFB896F0);
+        img.Fill(2, 2, 1, 1, 0); img.Fill(13, 2, 1, 1, 0); img.Fill(2, 13, 1, 1, 0); img.Fill(13, 13, 1, 1, 0);
+        img.Outline(0xFF1B1D2A);
+        return img;
+    }
+
+    void DuplicateObject(string id)
+    {
+        if (_project.FindType(id) is not { } type) return;
+        Snapshot();
+        var copy = type.Clone();
+        copy.Name = type.Name + " copy";
+        copy.Id = _project.NewTypeId(type.Id + "Copy");
+        _project.Objects.Insert(_project.Objects.IndexOf(type) + 1, copy);
+        ObjectsChanged();
+        SetStatus($"Made {copy.Name}. Double-click it to change its sprite or behaviour.");
+    }
+
+    void DeleteObject(string id)
+    {
+        if (_project.FindType(id) is not { } type) return;
+        Snapshot();
+        _project.Objects.Remove(type);
+        var removed = 0;
+        foreach (var level in _project.Levels) removed += level.Instances.RemoveAll(i => i.Type == id);
+        if (_canvas.Selected?.Type == id) _canvas.Select(null);
+        ObjectsChanged();
+        SetStatus($"Deleted {type.Name}{(removed > 0 ? $" and {removed} placed cop{(removed == 1 ? "y" : "ies")}" : "")}. Ctrl+Z brings it back.");
     }
 
     // ------------------------------------------------------------------ commands

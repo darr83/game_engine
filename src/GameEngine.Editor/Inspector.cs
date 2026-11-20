@@ -29,6 +29,7 @@ public sealed class Inspector : UserControl
     public event Action? Changed;
     public event Action? LevelsChanged;
     public event Action? DeleteRequested;
+    public event Action<string>? EditTypeRequested;
 
     public void Show(Project project, Level level, Instance? instance)
     {
@@ -62,15 +63,15 @@ public sealed class Inspector : UserControl
     void Rebuild()
     {
         _stack.Children.Clear();
-        if (_instance is not null && ObjectCatalog.Find(_instance.Type) is { } def) BuildObject(_instance, def);
+        if (_instance is not null && _project.FindType(_instance.Type) is { } def) BuildObject(_instance, def);
         else BuildLevelAndGame();
     }
 
-    void BuildObject(Instance inst, ObjectDef def)
+    void BuildObject(Instance inst, ObjectType def)
     {
         var header = new SpacedGrid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnGap = 12 };
         var scale = Math.Max(1, Math.Floor(36.0 / Math.Max(def.Width, def.Height)));
-        var img = new Image { Source = SpriteCache.Get(def.Id), Width = def.Width * scale, Height = def.Height * scale };
+        var img = new Image { Source = SpriteCache.Get(def.Icon), Width = def.Width * scale, Height = def.Height * scale };
         RenderOptions.SetBitmapInterpolationMode(img, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
         header.Children.Add(new Border
         {
@@ -82,7 +83,16 @@ public sealed class Inspector : UserControl
         Grid.SetColumn(title, 1);
         header.Children.Add(title);
         _stack.Children.Add(header);
-        _stack.Children.Add(Ui.Label(def.Description, 12, UiTheme.Muted));
+        if (def.Description.Length > 0) _stack.Children.Add(Ui.Label(def.Description, 12, UiTheme.Muted));
+        var editType = new Button
+        {
+            Content = $"Edit {def.Name}'s sprite and behaviour…",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+        };
+        ToolTip.SetTip(editType, "Changes every copy of this object");
+        editType.Click += (_, _) => EditTypeRequested?.Invoke(def.Id);
+        _stack.Children.Add(editType);
         _stack.Children.Add(Ui.Divider());
 
         _stack.Children.Add(Ui.Heading("Position"));
@@ -96,7 +106,7 @@ public sealed class Inspector : UserControl
 
         if (def.Properties.Length > 0)
         {
-            _stack.Children.Add(Ui.Heading("Behaviour"));
+            _stack.Children.Add(Ui.Heading("This copy's settings"));
             foreach (var p in def.Properties)
             {
                 var prop = p;
@@ -107,8 +117,8 @@ public sealed class Inspector : UserControl
 
         _stack.Children.Add(Ui.Heading("Behaviours"));
         var chips = new WrapPanel();
-        foreach (var b in Enum.GetValues<Behaviour>().Where(b => b != Behaviour.None && def.Has(b)))
-            chips.Children.Add(Chip(Pretty(b)));
+        foreach (var info in BehaviourCatalog.All.Where(i => def.Has(i.Flag)))
+            chips.Children.Add(Chip(info.Name));
         if (def.Behaviours == Behaviour.None) chips.Children.Add(Chip("Trigger (use events)"));
         _stack.Children.Add(chips);
 
@@ -123,13 +133,6 @@ public sealed class Inspector : UserControl
         delete.Click += (_, _) => DeleteRequested?.Invoke();
         _stack.Children.Add(delete);
     }
-
-    static string Pretty(Behaviour b) => b switch
-    {
-        Behaviour.MovingPlatform => "Moving platform",
-        Behaviour.JumpThru => "Jump-through",
-        _ => b.ToString(),
-    };
 
     static Border Chip(string text) => new()
     {

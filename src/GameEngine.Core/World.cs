@@ -29,7 +29,7 @@ public sealed class InputState
 public sealed class Entity
 {
     public int Id { get; init; }
-    public required ObjectDef Def { get; init; }
+    public required ObjectType Def { get; init; }
     public required Instance Source { get; init; }
     public string Type => Def.Id;
 
@@ -39,7 +39,15 @@ public sealed class Entity
     public double PrevX, PrevY;
 
     public int Facing = 1;
+    public bool Visible = true;
     public bool OnGround;
+    public int JumpsUsed;
+
+    /// <summary>This object's own variables (e.g. Health), started from its type's defaults.</summary>
+    public Dictionary<string, double> Vars { get; init; } = new();
+
+    /// <summary>An animation chosen by an event; overrides the automatic one.</summary>
+    public string? Animation;
     public Entity? StandingOn;
     public bool Dead;
     public double AnimTime;
@@ -74,6 +82,7 @@ public sealed class World
     readonly List<Entity> _entities = new();
     readonly List<Entity> _spawned = new();
     readonly Dictionary<int, double> _timers = new();
+    readonly Random _random = new(1234);
     Dictionary<string, double> _varsAtLevelStart = new();
     double _accumulator;
     long _tick;
@@ -85,6 +94,7 @@ public sealed class World
     public World(Project project, int levelIndex = 0)
     {
         _project = project;
+        project.EnsureObjects();
         Vars = new Dictionary<string, double>(project.Variables);
         LevelIndex = Math.Clamp(levelIndex, 0, Math.Max(0, project.Levels.Count - 1));
         LoadLevel();
@@ -138,8 +148,12 @@ public sealed class World
         UpdatePlatforms();
         foreach (var e in _entities)
         {
+            if (e.Dead) continue;
             if (e.Def.Has(Behaviour.Platformer)) UpdatePlayer(e);
             else if (e.Def.Has(Behaviour.Patrol)) UpdatePatrol(e);
+            else if (e.Def.Has(Behaviour.Bullet)) UpdateBullet(e);
+            else if (e.Def.Has(Behaviour.Gravity)) UpdateFalling(e);
+            if (e.Def.Has(Behaviour.Float)) UpdateFloat(e);
             if (e.Squash > 0) e.Squash -= Dt;
         }
 
@@ -192,21 +206,33 @@ public sealed class World
         _varsAtLevelStart = new Dictionary<string, double>(Vars);
         foreach (var inst in Level.Instances)
         {
-            var def = ObjectCatalog.Find(inst.Type);
+            var def = _project.FindType(inst.Type);
             if (def is null) continue;
             _entities.Add(CreateEntity(def, inst, inst.X, inst.Y));
         }
         UpdateCamera();
     }
 
-    Entity CreateEntity(ObjectDef def, Instance source, double x, double y) => new()
+    Entity CreateEntity(ObjectType def, Instance source, double x, double y)
     {
-        Id = _nextId++,
-        Def = def,
-        Source = source,
-        X = x, Y = y, PrevX = x, PrevY = y,
-        StartX = x, StartY = y,
-    };
+        var e = new Entity
+        {
+            Id = _nextId++,
+            Def = def,
+            Source = source,
+            X = x, Y = y, PrevX = x, PrevY = y,
+            StartX = x, StartY = y,
+            Vars = new Dictionary<string, double>(def.Variables),
+        };
+        if (def.Has(Behaviour.Bullet))
+        {
+            var angle = e.Prop("Angle") * Math.PI / 180;
+            e.VX = Math.Cos(angle) * e.Prop("Speed");
+            e.VY = Math.Sin(angle) * e.Prop("Speed");
+            if (e.VX < -0.01) e.Facing = -1;
+        }
+        return e;
+    }
 
     // ------------------------------------------------------------------ behaviours
 
@@ -251,16 +277,25 @@ public sealed class World
 
         var move = (Input.Right ? 1 : 0) - (Input.Left ? 1 : 0);
         if (move != 0) e.Facing = move;
-        var accel = speed * (e.OnGround ? 12 : 7);
+        var a = e.Prop("Acceleration");
+        if (a <= 0) a = 12;
+        var accel = speed * (e.OnGround ? a : a * 0.6);
         e.VX = Approach(e.VX, move * speed, accel * Dt);
 
+        if (e.OnGround) e.JumpsUsed = 0;
         e.Coyote = e.OnGround ? 0.1 : e.Coyote - Dt;
         e.JumpBuffer = Input.JumpPressed ? 0.12 : e.JumpBuffer - Dt;
-        if (e.JumpBuffer > 0 && e.Coyote > 0)
+        var maxJumps = Math.Max(1, (int)e.Prop("Jumps"));
+        // walking off a ledge uses up the ground jump
+        var used = e.Coyote <= 0 ? Math.Max(1, e.JumpsUsed) : e.JumpsUsed;
+        var groundJump = e.JumpBuffer > 0 && e.Coyote > 0;
+        var airJump = !groundJump && Input.JumpPressed && e.Coyote <= 0 && used < maxJumps;
+        if (groundJump || airJump)
         {
             e.VY = -jump;
             e.JumpBuffer = 0;
             e.Coyote = 0;
+            e.JumpsUsed = used + 1;
             e.OnGround = false;
             e.StandingOn = null;
         }
@@ -294,12 +329,12 @@ public sealed class World
     {
         var speed = e.Prop("Speed");
         e.VX = e.Facing * speed;
-        e.VY = Math.Min(e.VY + 900 * Dt, MaxFall);
+        e.VY = Math.Min(e.VY + e.Prop("Gravity") * Dt, MaxFall);
 
         MoveAndCollide(e, out var hitWall);
 
         var turn = hitWall || e.X <= 0 || e.X + e.W >= LevelWidth;
-        if (!turn && e.OnGround)
+        if (!turn && e.OnGround && e.Prop("TurnAtLedges") >= 0.5)
         {
             // turn around at ledges
             var aheadX = e.Facing > 0 ? e.X + e.W + 1 : e.X - 2;
@@ -307,6 +342,35 @@ public sealed class World
         }
         if (turn) e.Facing = -e.Facing;
     }
+
+    void UpdateBullet(Entity e)
+    {
+        e.X += e.VX * Dt;
+        e.Y += e.VY * Dt;
+        if (e.Prop("StopAtSolids") >= 0.5 && _entities.Any(b => b != e && !b.Dead && b.Def.Has(Behaviour.Solid) && e.Overlaps(b)))
+            e.Dead = true;
+        // tidy up bullets that have flown far outside the level
+        if (e.X < -200 || e.X > LevelWidth + 200 || e.Y < -200 || e.Y > LevelHeight + 200) e.Dead = true;
+    }
+
+    void UpdateFalling(Entity e)
+    {
+        e.VX = Approach(e.VX, 0, 600 * Dt);
+        e.VY = Math.Min(e.VY + e.Prop("Gravity") * Dt, MaxFall);
+        MoveAndCollide(e, out _);
+    }
+
+    void UpdateFloat(Entity e)
+    {
+        var period = Math.Max(0.1, e.Prop("Period"));
+        var offset = e.StartX * 0.05;    // so neighbours don't bob in perfect sync
+        var phase = Math.Sin(_tickTime * 2 * Math.PI / period + offset);
+        var prevPhase = Math.Sin((_tickTime - Dt) * 2 * Math.PI / period + offset);
+        e.X += (phase - prevPhase) * e.Prop("FloatX");
+        e.Y += (phase - prevPhase) * e.Prop("FloatY");
+    }
+
+    double _tickTime => _tick * Dt;
 
     static double Approach(double value, double target, double step) =>
         value < target ? Math.Min(value + step, target) : Math.Max(value - step, target);
@@ -440,6 +504,9 @@ public sealed class World
             case "Stomps": return Pairs((a, b) => a.Overlaps(b) && a.VY > 0 && a.PrevY + a.H <= b.Y + b.H * 0.5);
             case "FallsOut": return Singles(a => a.Y > LevelHeight + 16);
             case "IsOnGround": return Singles(a => a.OnGround);
+            case "IsMoving": return Singles(a => Math.Abs(a.X - a.PrevX) > 0.01 || Math.Abs(a.Y - a.PrevY) > 0.01);
+            case "CompareObjectVar": return Singles(a => Compare(a.Vars.GetValueOrDefault(c.Arg("Var")), c.Arg("Op", "="), c.Num("Value")));
+            case "Random": return If(_random.NextDouble() * 100 < c.Num("Percent", 50));
             case "CountIs": return If(Compare(Alive(c.Arg("Type")).Count(), c.Arg("Op", "="), c.Num("Value")));
             case "KeyPressed": return If(Input.WasPressed(c.Arg("Key")));
             case "KeyDown": return If(Input.IsDown(c.Arg("Key")));
@@ -470,7 +537,7 @@ public sealed class World
                 break;
             case "Spawn":
             {
-                var def = ObjectCatalog.Find(a.Arg("Type"));
+                var def = _project.FindType(a.Arg("Type"));
                 var at = Target();
                 if (def is null) break;
                 double x = at is null ? CameraX + ViewWidth / 2 : at.X + at.W / 2 - def.Width / 2.0;
@@ -485,6 +552,32 @@ public sealed class World
                     t.OnGround = false;
                     t.StandingOn = null;
                 }
+                break;
+            case "SetObjectVar":
+                if (Target() is { } sv) sv.Vars[a.Arg("Var")] = a.Num("Value");
+                break;
+            case "AddObjectVar":
+                if (Target() is { } av) av.Vars[a.Arg("Var")] = av.Vars.GetValueOrDefault(a.Arg("Var")) + a.Num("Value");
+                break;
+            case "SetVelocity":
+                if (Target() is { } vt)
+                {
+                    vt.VX = a.Num("VX");
+                    vt.VY = a.Num("VY");
+                    if (vt.VY < 0) { vt.OnGround = false; vt.StandingOn = null; }
+                }
+                break;
+            case "MoveBy":
+                if (Target() is { } mt) { mt.X += a.Num("X"); mt.Y += a.Num("Y"); }
+                break;
+            case "SetAnimation":
+                if (Target() is { } at2) { at2.Animation = a.Arg("Animation"); at2.AnimTime = 0; }
+                break;
+            case "Flip":
+                if (Target() is { } ft) ft.Facing = -ft.Facing;
+                break;
+            case "SetVisible":
+                if (Target() is { } vis) vis.Visible = a.Arg("Visible", "Yes") != "No";
                 break;
             case "AddVar":
                 Vars[a.Arg("Var")] = Vars.GetValueOrDefault(a.Arg("Var")) + a.Num("Value");
@@ -513,17 +606,25 @@ public sealed class World
         return text;
     }
 
-    /// <summary>The sprite frame to draw for an entity right now.</summary>
-    public static int FrameFor(Entity e)
+    /// <summary>The image to draw for an entity right now, and whether to flip it.</summary>
+    public static (PixelImage image, bool mirrored) SpriteFor(Entity e)
     {
-        var frames = SpriteArt.Frames(e.Type).Length;
-        if (e.Def.Has(Behaviour.Platformer))
+        var t = e.Def;
+        SpriteAnimation? anim = null;
+        if (e.Animation is { } forced) anim = t.Animation(forced);
+        if (anim is null && (t.Has(Behaviour.Platformer) || t.Has(Behaviour.Patrol) || t.Has(Behaviour.Gravity)))
         {
-            if (!e.OnGround) return (int)SpriteArt.PlayerPose.Jump;
-            if (Math.Abs(e.VX) > 5) return 1 + (int)(e.AnimTime * e.Def.AnimFps) % 2;
-            return (int)SpriteArt.PlayerPose.Idle;
+            if (!e.OnGround) anim = (e.VY > 0 ? t.Animation("Fall") : null) ?? t.Animation("Jump");
+            else if (Math.Abs(e.VX) > 5) anim = t.Animation("Run") ?? t.Animation("Walk");
+            anim ??= t.Animation("Idle");
         }
-        if (e.Def.AnimFps <= 0 || frames <= 1) return 0;
-        return (int)(e.AnimTime * e.Def.AnimFps) % frames;
+        anim ??= t.Animation("Default") ?? t.Animations.FirstOrDefault(a => a.Frames.Count > 0);
+        if (anim is null) return (t.Icon, false);
+
+        var count = anim.Frames.Count;
+        var index = anim.Fps <= 0 || count == 1 ? 0 : (int)(e.AnimTime * anim.Fps);
+        index = anim.Loop ? index % count : Math.Min(index, count - 1);
+        var flip = e.Facing < 0 && (t.Has(Behaviour.Platformer) || t.Has(Behaviour.Patrol) || t.Has(Behaviour.Bullet) || e.Animation is not null);
+        return (anim.Frames[index], flip);
     }
 }

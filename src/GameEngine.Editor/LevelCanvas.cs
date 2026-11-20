@@ -100,7 +100,7 @@ public sealed class LevelCanvas : Control
     Point ToWorld(Point screen) => new(screen.X / _zoom + _pan.X, screen.Y / _zoom + _pan.Y);
 
     /// <summary>Where an object of this type goes when placed in the tile under a point.</summary>
-    Point PlacementFor(ObjectDef def, Point world)
+    Point PlacementFor(ObjectType def, Point world)
     {
         var cx = Math.Floor(world.X / TileSize) * TileSize;
         var cy = Math.Floor(world.Y / TileSize) * TileSize;
@@ -114,7 +114,7 @@ public sealed class LevelCanvas : Control
     Instance? HitTest(Point world)
     {
         return _level.Instances
-            .Select(i => (inst: i, def: ObjectCatalog.Find(i.Type)))
+            .Select(i => (inst: i, def: _project.FindType(i.Type)))
             .Where(t => t.def is not null)
             .OrderByDescending(t => SceneRenderer.Layer(t.def!))
             .ThenByDescending(t => _level.Instances.IndexOf(t.inst))
@@ -145,20 +145,20 @@ public sealed class LevelCanvas : Control
             for (var y = 0.0; y <= lh; y += TileSize) ctx.DrawLine(gridPen, new Point(0, y), new Point(lw, y));
 
             foreach (var inst in _level.Instances
-                         .Select(i => (inst: i, def: ObjectCatalog.Find(i.Type)))
+                         .Select(i => (inst: i, def: _project.FindType(i.Type)))
                          .Where(t => t.def is not null)
                          .OrderBy(t => SceneRenderer.Layer(t.def!)))
             {
                 var def = inst.def!;
                 if (def.Has(Behaviour.MovingPlatform)) DrawPlatformPath(ctx, inst.inst, def, px);
-                SceneRenderer.DrawSprite(ctx, def.Id, 0, false, inst.inst.X, inst.inst.Y, def.Width, def.Height);
+                SceneRenderer.DrawSprite(ctx, def.Icon, false, inst.inst.X, inst.inst.Y, def.Width, def.Height);
             }
 
             // level edge
             ctx.DrawRectangle(null, new Pen(new SolidColorBrush(Colors.White, 0.35), px), new Rect(0, 0, lw, lh));
 
             // selection
-            if (Selected is not null && ObjectCatalog.Find(Selected.Type) is { } sd)
+            if (Selected is not null && _project.FindType(Selected.Type) is { } sd)
             {
                 var r = new Rect(Selected.X, Selected.Y, sd.Width, sd.Height).Inflate(1.5 * px);
                 ctx.DrawRectangle(null, new Pen(UiTheme.Accent, 2 * px), r);
@@ -168,20 +168,20 @@ public sealed class LevelCanvas : Control
 
             // paint preview
             var previewType = _dropType ?? (Tool == Tool.Paint ? PaintType : null);
-            if (_hoverWorld is { } hw && previewType is not null && ObjectCatalog.Find(previewType) is { } pd)
+            if (_hoverWorld is { } hw && previewType is not null && _project.FindType(previewType) is { } pd)
             {
                 var at = PlacementFor(pd, hw);
-                SceneRenderer.DrawSprite(ctx, pd.Id, 0, false, at.X, at.Y, pd.Width, pd.Height, 0.55);
+                SceneRenderer.DrawSprite(ctx, pd.Icon, false, at.X, at.Y, pd.Width, pd.Height, 0.55);
                 ctx.DrawRectangle(null, new Pen(new SolidColorBrush(Colors.White, 0.8), px), new Rect(at.X, at.Y, pd.Width, pd.Height));
             }
-            else if (_hoverWorld is { } ew && Tool == Tool.Erase && HitTest(ew) is { } target && ObjectCatalog.Find(target.Type) is { } td)
+            else if (_hoverWorld is { } ew && Tool == Tool.Erase && HitTest(ew) is { } target && _project.FindType(target.Type) is { } td)
             {
                 ctx.FillRectangle(new SolidColorBrush(UiTheme.DangerColor, 0.35), new Rect(target.X, target.Y, td.Width, td.Height));
             }
         }
     }
 
-    void DrawPlatformPath(DrawingContext ctx, Instance inst, ObjectDef def, double px)
+    void DrawPlatformPath(DrawingContext ctx, Instance inst, ObjectType def, double px)
     {
         double dx = inst.Get(def, "DistanceX"), dy = inst.Get(def, "DistanceY");
         if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5) return;
@@ -189,7 +189,7 @@ public sealed class LevelCanvas : Control
         var to = new Point(from.X + dx, from.Y + dy);
         var pen = new Pen(new SolidColorBrush(Colors.White, 0.85), 1.5 * px) { DashStyle = new DashStyle(new double[] { 3, 3 }, 0) };
         ctx.DrawLine(pen, from, to);
-        SceneRenderer.DrawSprite(ctx, def.Id, 0, false, inst.X + dx, inst.Y + dy, def.Width, def.Height, 0.35);
+        SceneRenderer.DrawSprite(ctx, def.Icon, false, inst.X + dx, inst.Y + dy, def.Width, def.Height, 0.35);
         ctx.DrawEllipse(Brushes.White, null, to, 2.5 * px, 2.5 * px);
     }
 
@@ -333,7 +333,7 @@ public sealed class LevelCanvas : Control
             return;
         }
 
-        if (ObjectCatalog.Find(PaintType) is not { } def) return;
+        if (_project.FindType(PaintType) is not { } def) return;
         var at = PlacementFor(def, world);
         if (at.X < 0 || at.Y < 0 || at.X >= _level.Width * TileSize || at.Y >= _level.Height * TileSize) return;
         if (IsOccupied(def, at)) return;
@@ -341,13 +341,13 @@ public sealed class LevelCanvas : Control
         Changed?.Invoke();
     }
 
-    bool IsOccupied(ObjectDef def, Point at)
+    bool IsOccupied(ObjectType def, Point at)
     {
         foreach (var i in _level.Instances)
         {
             if (i.Type == def.Id && Math.Abs(i.X - at.X) < 0.5 && Math.Abs(i.Y - at.Y) < 0.5) return true;
             // don't stack solid tiles on top of each other
-            if (def.Has(Behaviour.Solid) && ObjectCatalog.Find(i.Type) is { } other && other.Has(Behaviour.Solid) &&
+            if (def.Has(Behaviour.Solid) && _project.FindType(i.Type) is { } other && other.Has(Behaviour.Solid) &&
                 at.X < i.X + other.Width && at.X + def.Width > i.X && at.Y < i.Y + other.Height && at.Y + def.Height > i.Y)
                 return true;
         }
@@ -357,7 +357,7 @@ public sealed class LevelCanvas : Control
     /// <summary>Places a new object (from a drag-drop or a click in the library) under a screen point.</summary>
     public Instance? PlaceAt(string type, Point screen)
     {
-        if (ObjectCatalog.Find(type) is not { } def) return null;
+        if (_project.FindType(type) is not { } def) return null;
         var at = PlacementFor(def, ToWorld(screen));
         Changing?.Invoke();
         var inst = new Instance { Id = _level.NextId(), Type = type, X = at.X, Y = at.Y };

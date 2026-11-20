@@ -8,22 +8,22 @@ using GameEngine.Core;
 
 namespace GameEngine.Desktop;
 
-/// <summary>Turns the engine's pixel art into Avalonia bitmaps, once per frame.</summary>
+/// <summary>
+/// Turns pixel images into Avalonia bitmaps, once per image. Call <see cref="Invalidate"/>
+/// after changing an image's pixels.
+/// </summary>
 public static class SpriteCache
 {
-    static readonly Dictionary<(string, int, bool), Bitmap> Cache = new();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PixelImage, Bitmap[]> Cache = new();
 
-    public static Bitmap Get(string type, int frame = 0, bool mirrored = false)
+    public static Bitmap Get(PixelImage img, bool mirrored = false)
     {
-        var key = (type, frame, mirrored);
-        if (Cache.TryGetValue(key, out var bmp)) return bmp;
-
-        var frames = SpriteArt.Frames(type);
-        var img = frames[Math.Clamp(frame, 0, frames.Length - 1)];
-        if (mirrored) img = img.Mirrored();
-        Cache[key] = bmp = ToBitmap(img);
-        return bmp;
+        var pair = Cache.GetValue(img, _ => new Bitmap[2]);
+        var i = mirrored ? 1 : 0;
+        return pair[i] ??= ToBitmap(mirrored ? img.Mirrored() : img);
     }
+
+    public static void Invalidate(PixelImage img) => Cache.Remove(img);
 
     public static Bitmap ToBitmap(PixelImage img)
     {
@@ -45,14 +45,14 @@ public static class SceneRenderer
     static readonly RenderOptions Pixelated = new() { BitmapInterpolationMode = BitmapInterpolationMode.None, EdgeMode = EdgeMode.Aliased };
 
     /// <summary>Back-to-front drawing order.</summary>
-    public static int Layer(ObjectDef def) =>
+    public static int Layer(ObjectType def) =>
         def.Has(Behaviour.Decoration) ? 0 :
         def.BlocksMovement ? 1 :
         def.Has(Behaviour.Platformer) || def.Has(Behaviour.Patrol) ? 3 : 2;
 
-    public static void DrawSprite(DrawingContext ctx, string type, int frame, bool mirrored, double x, double y, double w, double h, double opacity = 1)
+    public static void DrawSprite(DrawingContext ctx, PixelImage image, bool mirrored, double x, double y, double w, double h, double opacity = 1)
     {
-        var bmp = SpriteCache.Get(type, frame, mirrored);
+        var bmp = SpriteCache.Get(image, mirrored);
         using (ctx.PushRenderOptions(Pixelated))
         using (opacity < 1 ? ctx.PushOpacity(opacity) : default(DrawingContext.PushedState?))
             ctx.DrawImage(bmp, new Rect(0, 0, bmp.PixelSize.Width, bmp.PixelSize.Height), new Rect(x, y, w, h));
@@ -90,13 +90,12 @@ public static class SceneRenderer
         {
             foreach (var e in w.Entities.OrderBy(e => Layer(e.Def)))
             {
-                if (e.X + e.W < camX - 64 || e.X > camX + w.ViewWidth + 64) continue;
-                var frame = World.FrameFor(e);
-                var mirror = e.Facing < 0 && (e.Def.Has(Behaviour.Platformer) || e.Def.Has(Behaviour.Patrol));
+                if (!e.Visible || e.X + e.W < camX - 64 || e.X > camX + w.ViewWidth + 64) continue;
+                var (image, mirror) = World.SpriteFor(e);
                 double y = e.Y, h = e.H;
                 if (e.Squash > 0) { y += 4; h -= 4; }
                 double left = Sx(e.X), top = Sy(y);
-                DrawSprite(ctx, e.Type, frame, mirror, left, top, Sx(e.X + e.W) - left, Sy(y + h) - top);
+                DrawSprite(ctx, image, mirror, left, top, Sx(e.X + e.W) - left, Sy(y + h) - top);
             }
         }
 

@@ -113,9 +113,9 @@ public sealed class EventItemDialog : Window
 
     static EventItem Copy(EventItem e) => new() { Kind = e.Kind, Args = new Dictionary<string, string>(e.Args) };
 
-    static bool Compatible(ParamDef p, string value) => p.Type switch
+    bool Compatible(ParamDef p, string value) => p.Type switch
     {
-        ParamType.ObjectType => ObjectCatalog.Find(value) is not null,
+        ParamType.ObjectType => _project.FindType(value) is not null,
         ParamType.Number => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _),
         ParamType.Target => value is "A" or "B",
         _ => true,
@@ -123,7 +123,7 @@ public sealed class EventItemDialog : Window
 
     EventKind Kind => (_isCondition ? EventCatalog.FindCondition(_item.Kind) : EventCatalog.FindAction(_item.Kind)) ?? _kinds[0];
 
-    void UpdatePreview() => _preview.Text = Kind.Describe(_item);
+    void UpdatePreview() => _preview.Text = Kind.Describe(_item, _project);
 
     void BuildForm()
     {
@@ -140,7 +140,12 @@ public sealed class EventItemDialog : Window
 
             Control input = p.Type switch
             {
-                ParamType.ObjectType => Combo(ObjectCatalog.TypeNames.ToArray(), value, Set),
+                ParamType.ObjectType => Combo(_project.Objects.Select(o => o.Id).ToArray(), value, Set, id => _project.TypeName(id)),
+                ParamType.YesNo => Combo(new[] { "Yes", "No" }, value, Set),
+                ParamType.ObjectVariable => Suggest(value, Set, _project.Objects.SelectMany(o => o.Variables.Keys).Distinct(),
+                    "Each object keeps its own copy. Add object variables in the object editor."),
+                ParamType.Animation => Suggest(value, Set, _project.Objects.SelectMany(o => o.Animations.Select(a => a.Name)).Distinct(),
+                    "The name of one of the object's animations."),
                 ParamType.Key => Combo(EventCatalog.Keys, value, Set),
                 ParamType.Compare => Combo(EventCatalog.Comparisons, value, Set),
                 ParamType.Target => Combo(new[] { "A", "B" }, value, Set,
@@ -182,6 +187,22 @@ public sealed class EventItemDialog : Window
         var panel = new StackPanel { Spacing = 4 };
         panel.Children.Add(box);
         panel.Children.Add(Ui.Label("A new name creates a new variable.", 12, UiTheme.Muted));
+        return panel;
+    }
+
+    static Control Suggest(string value, Action<string> set, IEnumerable<string> suggestions, string hint)
+    {
+        var box = new AutoCompleteBox
+        {
+            Text = value,
+            ItemsSource = suggestions.ToList(),
+            FilterMode = AutoCompleteFilterMode.StartsWithOrdinal,
+            MinimumPrefixLength = 0,
+        };
+        box.TextChanged += (_, _) => set((box.Text ?? "").Trim());
+        var panel = new StackPanel { Spacing = 4 };
+        panel.Children.Add(box);
+        panel.Children.Add(Ui.Label(hint, 12, UiTheme.Muted));
         return panel;
     }
 

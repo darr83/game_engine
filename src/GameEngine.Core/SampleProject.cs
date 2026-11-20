@@ -5,17 +5,49 @@ public static class SampleProject
 {
     public static Project Create()
     {
-        var p = new Project { Name = "My Platformer" };
+        var p = new Project { Name = "My Platformer", Objects = BuiltInObjects.Create() };
+        p.Objects.Add(Gem());
         p.Levels.Add(Level1());
         p.Levels.Add(Level2());
         p.Events.AddRange(DefaultEvents());
+        p.Events.Insert(1, new GameEvent
+        {
+            Comment = "Gems are worth 10",
+            Conditions = { new EventItem("Collides", ("A", "Player"), ("B", "Gem")) },
+            Actions = { new EventItem("Destroy", ("Target", "B")), new EventItem("AddVar", ("Var", "Score"), ("Value", "10")) },
+        });
         return p;
+    }
+
+    /// <summary>A custom object made the same way a user would: own sprite, Float behaviour.</summary>
+    public static ObjectType Gem()
+    {
+        PixelImage Frame(int shine)
+        {
+            var img = new PixelImage(12, 12);
+            for (var y = 1; y < 11; y++)
+            {
+                var half = y < 5 ? y + 1 : 11 - y;
+                for (var x = 6 - half; x < 6 + half; x++)
+                    img[x, y] = x < 6 ? (y < 5 ? 0xFFB896F0 : 0xFF8E5BD9) : (y < 5 ? 0xFF8E5BD9 : 0xFF6A3FB8);
+            }
+            img.Outline(0xFF2A1748);
+            if (shine >= 0) { img[3 + shine, 3] = 0xFFFFFFFF; img[4 + shine, 2] = 0xFFFFFFFF; }
+            return img;
+        }
+        return new ObjectType
+        {
+            Id = "Gem", Name = "Gem", Category = "Items", Description = "A custom object: worth 10 points and floats gently.",
+            Width = 12, Height = 12, Behaviours = Behaviour.Float,
+            Settings = { ["FloatY"] = 3, ["Period"] = 1.6 },
+            Animations = { new SpriteAnimation { Name = "Default", Fps = 6, Frames = { Frame(0), Frame(1), Frame(2), Frame(-1) } } },
+        };
     }
 
     /// <summary>An empty project with one flat level and the standard events.</summary>
     public static Project CreateBlank()
     {
-        var p = new Project { Name = "New Game" };
+        var p = new Project { Name = "New Game", Objects = BuiltInObjects.Create() };
         var level = new Level { Name = "Level 1", Width = 40 };
         Ground(level, 0, 40, 15);
         Place(level, "Player", 3 * 16 + 2, 14 * 16 - 16);
@@ -119,6 +151,8 @@ public static class SampleProject
         Place(l, "Spikes", 44 * 16, 12 * 16 + 8);
         Place(l, "Spikes", 45 * 16, 12 * 16 + 8);
         Place(l, "Spring", 49 * 16, 12 * 16 + 6);
+        Place(l, "Gem", 49 * 16 + 2, 2 * 16);
+        Place(l, "Gem", 31 * 16 + 2, 8 * 16);
         for (var y = 4; y < 10; y += 2) Place(l, "Coin", 49 * 16 + 3, y * 16);
 
         Place(l, "Stone", 52 * 16, 13 * 16);

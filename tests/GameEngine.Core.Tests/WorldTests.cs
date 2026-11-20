@@ -156,11 +156,10 @@ public class WorldTests
     [Fact]
     public void Every_catalog_object_has_sprite_art_of_the_right_size()
     {
-        foreach (var def in ObjectCatalog.All)
+        foreach (var def in BuiltInObjects.Create())
         {
-            var frames = SpriteArt.Frames(def.Id);
-            Assert.NotEmpty(frames);
-            foreach (var f in frames)
+            Assert.NotEmpty(def.Animations);
+            foreach (var f in def.Animations.SelectMany(a => a.Frames))
             {
                 Assert.Equal(def.Width, f.Width);
                 Assert.Equal(def.Height, f.Height);

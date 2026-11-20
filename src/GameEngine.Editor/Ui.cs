@@ -29,6 +29,12 @@ public static class Ui
         public const string Down = "M12 18 L5 10 H19 Z";
         public const string Close = "M6.4 5 L12 10.6 L17.6 5 L19 6.4 L13.4 12 L19 17.6 L17.6 19 L12 13.4 L6.4 19 L5 17.6 L10.6 12 L5 6.4 Z";
         public const string Check = "M9 16.2 L4.8 12 L3.4 13.4 L9 19 L21 7 L19.6 5.6 Z";
+        public const string Fill = "M5 11 L11 5 L18 12 L12 18 Z M19 14 C19 14 21 16.5 21 18 A2 2 0 0 1 17 18 C17 16.5 19 14 19 14 Z";
+        public const string Picker = "M17 3 L21 7 L18 10 L19 11 L17.5 12.5 L11.5 6.5 L13 5 L14 6 Z M10.5 7.5 L16.5 13.5 L8 22 H4 V18 Z";
+        public const string FlipH = "M11 3h2v18h-2z M9 6 L3 18 H9 Z M15 6 L21 18 H15 Z";
+        public const string Copy = "M8 3h11v13H8z M5 7h2v12h9v2H5z";
+        public const string Left = "M15 5 L7 12 L15 19 Z";
+        public const string Right = "M9 5 L17 12 L9 19 Z";
         public const string Fit = "M4 4h6v2H6v4H4z M14 4h6v6h-2V6h-4z M4 14h2v4h4v2H4z M18 14h2v6h-6v-2h4z";
     }
 

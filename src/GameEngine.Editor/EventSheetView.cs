@@ -195,7 +195,7 @@ public sealed class EventSheetView : UserControl
         for (var i = 0; i < items.Count; i++)
         {
             var index = i;
-            stack.Children.Add(Chip(items[i], isCondition, color, soft,
+            stack.Children.Add(Chip(_project, items[i], isCondition, color, soft,
                 edit: async () =>
                 {
                     var result = await EventItemDialog.Ask(TopLevel.GetTopLevel(this) as Window, _project, isCondition, items[index]);
@@ -228,13 +228,13 @@ public sealed class EventSheetView : UserControl
         return border;
     }
 
-    static Control Chip(EventItem item, bool isCondition, IBrush color, IBrush soft, Action edit, Action remove)
+    static Control Chip(Project project, EventItem item, bool isCondition, IBrush color, IBrush soft, Action edit, Action remove)
     {
         var grid = new SpacedGrid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnGap = 10 };
         grid.Children.Add(new Border { Width = 3, CornerRadius = new CornerRadius(2), Background = color, Margin = new Thickness(0, 2) });
         var text = new TextBlock
         {
-            Text = EventCatalog.Describe(item, isCondition),
+            Text = EventCatalog.Describe(item, isCondition, project),
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = UiTheme.Text,

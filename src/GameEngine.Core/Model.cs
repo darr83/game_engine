@@ -11,10 +11,37 @@ public sealed class Project
     public List<Level> Levels { get; set; } = new();
     public List<GameEvent> Events { get; set; } = new();
 
+    /// <summary>Every kind of object in this game, premade and custom, with their sprites.</summary>
+    public List<ObjectType> Objects { get; set; } = new();
+
     /// <summary>Global variables and their starting values (e.g. Score = 0).</summary>
     public Dictionary<string, double> Variables { get; set; } = new() { ["Score"] = 0 };
 
     public Project Clone() => ProjectIO.FromJson(ProjectIO.ToJson(this));
+
+    public ObjectType? FindType(string id) => Objects.FirstOrDefault(o => o.Id == id);
+
+    public string TypeName(string id) => FindType(id)?.Name ?? id;
+
+    /// <summary>A new unique id based on a display name, e.g. "Bat", "Bat2".</summary>
+    public string NewTypeId(string name)
+    {
+        var baseId = new string(name.Where(char.IsLetterOrDigit).ToArray());
+        if (baseId.Length == 0 || char.IsDigit(baseId[0])) baseId = "Object" + baseId;
+        var id = baseId;
+        for (var n = 2; FindType(id) is not null; n++) id = baseId + n;
+        return id;
+    }
+
+    /// <summary>Adds the premade objects to projects saved before object types were editable.</summary>
+    public void EnsureObjects()
+    {
+        var builtIns = BuiltInObjects.Create();
+        if (Objects.Count == 0) { Objects.AddRange(builtIns); return; }
+        foreach (var id in Levels.SelectMany(l => l.Instances).Select(i => i.Type).Distinct())
+            if (FindType(id) is null && builtIns.FirstOrDefault(b => b.Id == id) is { } b)
+                Objects.Add(b);
+    }
 }
 
 public sealed class Level
@@ -44,12 +71,7 @@ public sealed class Instance
     /// <summary>Overrides for the object's tunable properties (speed, distance...).</summary>
     public Dictionary<string, double> Props { get; set; } = new();
 
-    public double Get(ObjectDef def, string prop)
-    {
-        if (Props.TryGetValue(prop, out var v)) return v;
-        var p = def.Properties.FirstOrDefault(x => x.Name == prop);
-        return p?.Default ?? 0;
-    }
+    public double Get(ObjectType type, string prop) => Props.TryGetValue(prop, out var v) ? v : type.Setting(prop);
 }
 
 /// <summary>One row of the event sheet: when all conditions are true, run the actions.</summary>
@@ -90,7 +112,12 @@ public static class ProjectIO
     public const string Extension = ".geproj";
 
     public static string ToJson(Project p) => JsonSerializer.Serialize(p, Options);
-    public static Project FromJson(string json) => JsonSerializer.Deserialize<Project>(json, Options) ?? new Project();
+    public static Project FromJson(string json)
+    {
+        var p = JsonSerializer.Deserialize<Project>(json, Options) ?? new Project();
+        p.EnsureObjects();
+        return p;
+    }
 
     public static void Save(Project p, string path) => File.WriteAllText(path, ToJson(p));
     public static Project Load(string path) => FromJson(File.ReadAllText(path));

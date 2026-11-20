@@ -2,7 +2,7 @@
 
 A desktop editor for making 2D platformer games, written in C#.
 
-Drag premade objects (player, ground, moving platforms, coins, enemies, springs, spikes, a goal flag) into a level. Wire up the game rules on a visual **event sheet**, press **Play**, then **Export** a stand-alone game you can share.
+Drag premade objects (player, ground, moving platforms, coins, enemies, springs, spikes, a goal flag) into a level, or draw your own. Wire up the game rules on a visual **event sheet**, press **Play**, then **Export** a stand-alone game you can share.
 
 ![Level editor](docs/editor-level.png)
 
@@ -20,7 +20,18 @@ Drag premade objects (player, ground, moving platforms, coins, enemies, springs,
   | Ledge | Jump up through it from below, then stand on it | |
   | Spring | Launches the player upwards | Bounce power |
   | Coin, Goal, Spikes | Triggers for your events | |
+| Gem | An example custom object: own sprite, Float behaviour, worth 10 points | |
   | Bush, Cloud | Scenery | |
+
+- **Make your own objects, or change any premade one**: double-click an object (or press **New**) to open the object editor.
+  - **Sprite**: a pixel editor with pencil, eraser, fill, colour picker, mirror drawing and onion skin. Named animations with any number of frames, frame rate and looping, and a live preview. Import a PNG, or slice a sprite sheet into frames.
+  - **Behaviour**: tick any mix of Platformer, Solid, Jump-through, Moving platform, Patrol, Spring, Bullet, Float, Gravity and Decoration, then tune their settings (speed, jump power, gravity, double jump, bullet angle, float distance…).
+  - **Variables**: numbers each copy keeps for itself, such as Health or Ammo.
+  - Animations named Idle, Run, Jump and Fall play automatically for moving characters; anything else plays Default, or whatever an event picks.
+
+  ![Sprite editor](docs/object-sprite.png)
+
+  ![Behaviour settings](docs/object-behaviour.png)
 
 - **Visual event sheet**: rows of "when these conditions are true → do these actions". For example, *Player touches Coin → Destroy the other object, Add 1 to Score*. Turn on **Show as C#** to see the same sheet as C# code.
 - **Variables** such as Score, shown on screen while playing.
@@ -82,6 +93,8 @@ On Windows PowerShell:
 | Undo / redo | **Ctrl+Z** / **Ctrl+Y** |
 | Save / open | **Ctrl+S** / **Ctrl+O** (`.geproj` files) |
 | Play | **F5** |
+| Edit an object's sprite and behaviour | Double-click it in the Objects panel, right-click it, or use the button in the inspector |
+| Make a new object | **New** at the top of the Objects panel |
 
 Moving platforms show their path as a dotted line with a faded copy at the far end. Change **Distance X/Y** in the inspector to set where they travel.
 
@@ -105,9 +118,9 @@ tests/
 
 ## Roadmap
 
-- Import your own sprites and sprite sheets, alongside the built-in art
 - Sound effects and music
+- Separate collision boxes and origin points for sprites
 - Write your own C# code inside events, compiled with Roslyn
-- More events: timers per object, set position, change animation, camera shake
+- More events: timers per object, camera shake, follow another object
 - Tilemap auto-tiling, parallax backgrounds and layers
 - Gamepad support

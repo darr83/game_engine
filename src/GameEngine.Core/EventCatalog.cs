@@ -2,7 +2,7 @@ namespace GameEngine.Core;
 
 public enum ParamType
 {
-    /// <summary>One of the object types from <see cref="ObjectCatalog"/>.</summary>
+    /// <summary>One of the project's object types.</summary>
     ObjectType,
     /// <summary>Which object from the conditions to act on: A (first) or B (second).</summary>
     Target,
@@ -14,6 +14,12 @@ public enum ParamType
     /// <summary>A comparison operator: =, !=, &lt;, &lt;=, &gt;, &gt;=.</summary>
     Compare,
     Text,
+    /// <summary>A variable that each object has for itself (e.g. Health).</summary>
+    ObjectVariable,
+    /// <summary>The name of one of an object's animations.</summary>
+    Animation,
+    /// <summary>Yes or No.</summary>
+    YesNo,
 }
 
 public sealed record ParamDef(string Key, string Label, ParamType Type, string Default);
@@ -24,12 +30,13 @@ public sealed record ParamDef(string Key, string Label, ParamType Type, string D
 /// </summary>
 public sealed record EventKind(string Kind, string Name, string Category, string Template, ParamDef[] Params)
 {
-    public string Describe(EventItem item)
+    public string Describe(EventItem item, Project? project = null)
     {
         var text = Template;
         foreach (var p in Params)
         {
             var value = item.Arg(p.Key, p.Default);
+            if (p.Type == ParamType.ObjectType && project is not null) value = project.TypeName(value);
             if (p.Type == ParamType.Target) value = value == "B" ? "the other object" : "the first object";
             if (p.Type == ParamType.Text) value = $"\"{value}\"";
             text = text.Replace("{" + p.Key + "}", value);
@@ -67,6 +74,10 @@ public static class EventCatalog
             new[] { new ParamDef("A", "Object", ParamType.ObjectType, "Player") }),
         new("IsOnGround", "Object is on the ground", "Objects", "{A} is on the ground",
             new[] { new ParamDef("A", "Object", ParamType.ObjectType, "Player") }),
+        new("IsMoving", "Object is moving", "Objects", "{A} is moving",
+            new[] { new ParamDef("A", "Object", ParamType.ObjectType, "Player") }),
+        new("CompareObjectVar", "Compare object variable", "Objects", "{A}'s {Var} {Op} {Value}",
+            new[] { new ParamDef("A", "Object", ParamType.ObjectType, "Player"), new ParamDef("Var", "Object variable", ParamType.ObjectVariable, "Health"), new ParamDef("Op", "Is", ParamType.Compare, "<="), new ParamDef("Value", "Value", ParamType.Number, "0") }),
         new("CountIs", "Number of objects", "Objects", "Number of {Type} {Op} {Value}",
             new[] { new ParamDef("Type", "Object", ParamType.ObjectType, "Coin"), new ParamDef("Op", "Is", ParamType.Compare, "="), new ParamDef("Value", "Value", ParamType.Number, "0") }),
 
@@ -75,6 +86,8 @@ public static class EventCatalog
         new("KeyDown", "Key is held down", "Keyboard", "{Key} key is held down",
             new[] { new ParamDef("Key", "Key", ParamType.Key, "Space") }),
 
+        new("Random", "Random chance", "System", "{Percent}% chance",
+            new[] { new ParamDef("Percent", "Chance (%)", ParamType.Number, "50") }),
         new("Compare", "Compare variable", "Variables", "{Var} {Op} {Value}",
             new[] { new ParamDef("Var", "Variable", ParamType.Variable, "Score"), new ParamDef("Op", "Is", ParamType.Compare, ">="), new ParamDef("Value", "Value", ParamType.Number, "10") }),
     };
@@ -87,6 +100,20 @@ public static class EventCatalog
             new[] { new ParamDef("Type", "New object", ParamType.ObjectType, "Coin"), new ParamDef("Target", "Position of", ParamType.Target, "A") }),
         new("Bounce", "Bounce upwards", "Objects", "Bounce {Target} up with power {Power}",
             new[] { new ParamDef("Target", "Object", ParamType.Target, "A"), new ParamDef("Power", "Power", ParamType.Number, "250") }),
+        new("SetVelocity", "Set speed", "Objects", "Set {Target}'s speed to {VX}, {VY}",
+            new[] { new ParamDef("Target", "Object", ParamType.Target, "A"), new ParamDef("VX", "Speed X (right is +)", ParamType.Number, "0"), new ParamDef("VY", "Speed Y (down is +)", ParamType.Number, "-200") }),
+        new("MoveBy", "Move by", "Objects", "Move {Target} by {X}, {Y}",
+            new[] { new ParamDef("Target", "Object", ParamType.Target, "A"), new ParamDef("X", "X", ParamType.Number, "0"), new ParamDef("Y", "Y", ParamType.Number, "-16") }),
+        new("SetAnimation", "Play animation", "Objects", "Play {Target}'s \"{Animation}\" animation",
+            new[] { new ParamDef("Target", "Object", ParamType.Target, "A"), new ParamDef("Animation", "Animation", ParamType.Animation, "Default") }),
+        new("Flip", "Turn around", "Objects", "Turn {Target} around",
+            new[] { new ParamDef("Target", "Object", ParamType.Target, "A") }),
+        new("SetVisible", "Show or hide", "Objects", "Set {Target} visible: {Visible}",
+            new[] { new ParamDef("Target", "Object", ParamType.Target, "A"), new ParamDef("Visible", "Visible", ParamType.YesNo, "No") }),
+        new("SetObjectVar", "Set object variable", "Objects", "Set {Target}'s {Var} to {Value}",
+            new[] { new ParamDef("Target", "Object", ParamType.Target, "A"), new ParamDef("Var", "Object variable", ParamType.ObjectVariable, "Health"), new ParamDef("Value", "Value", ParamType.Number, "0") }),
+        new("AddObjectVar", "Add to object variable", "Objects", "Add {Value} to {Target}'s {Var}",
+            new[] { new ParamDef("Target", "Object", ParamType.Target, "B"), new ParamDef("Var", "Object variable", ParamType.ObjectVariable, "Health"), new ParamDef("Value", "Amount", ParamType.Number, "-1") }),
 
         new("AddVar", "Add to variable", "Variables", "Add {Value} to {Var}",
             new[] { new ParamDef("Var", "Variable", ParamType.Variable, "Score"), new ParamDef("Value", "Amount", ParamType.Number, "1") }),
@@ -102,9 +129,9 @@ public static class EventCatalog
     public static EventKind? FindCondition(string kind) => Conditions.FirstOrDefault(c => c.Kind == kind);
     public static EventKind? FindAction(string kind) => Actions.FirstOrDefault(c => c.Kind == kind);
 
-    public static string Describe(EventItem item, bool isCondition)
+    public static string Describe(EventItem item, bool isCondition, Project? project = null)
     {
         var def = isCondition ? FindCondition(item.Kind) : FindAction(item.Kind);
-        return def?.Describe(item) ?? $"Unknown: {item.Kind}";
+        return def?.Describe(item, project) ?? $"Unknown: {item.Kind}";
     }
 }

@@ -67,9 +67,15 @@ public static class EventCode
                     b = vb;
                     break;
                 }
-                case "FallsOut" or "IsOnGround":
+                case "FallsOut" or "IsOnGround" or "IsMoving" or "CompareObjectVar":
                 {
-                    var test = c.Kind == "FallsOut" ? "IsBelowLevel" : "IsOnGround";
+                    var test = c.Kind switch
+                    {
+                        "FallsOut" => "IsBelowLevel",
+                        "IsOnGround" => "IsOnGround",
+                        "IsMoving" => "IsMoving",
+                        _ => $"Vars[\"{c.Arg("Var")}\"] {CsOp(c.Arg("Op", "="))} {Num(c.Num("Value"))}",
+                    };
                     if (a is null)
                     {
                         a = Var(ta);
@@ -109,6 +115,7 @@ public static class EventCode
         "EveryTick" => "true",
         "EverySeconds" => $"Every({Num(c.Num("Seconds", 1))}s)",
         "CountIs" => $"Count<{c.Arg("Type")}>() {CsOp(c.Arg("Op", "="))} {Num(c.Num("Value"))}",
+        "Random" => $"Random.Chance({Num(c.Num("Percent", 50))})",
         "KeyPressed" => $"Keyboard.Pressed(Key.{c.Arg("Key")})",
         "KeyDown" => $"Keyboard.IsDown(Key.{c.Arg("Key")})",
         "Compare" => $"{Identifier(c.Arg("Var"))} {CsOp(c.Arg("Op", "="))} {Num(c.Num("Value"))}",
@@ -123,6 +130,13 @@ public static class EventCode
             "Destroy" => $"Destroy({Target()});",
             "Spawn" => $"Create<{act.Arg("Type")}>(at: {Target()});",
             "Bounce" => $"{Target()}.VelocityY = -{Num(act.Num("Power", 250))};",
+            "SetVelocity" => $"{Target()}.Velocity = ({Num(act.Num("VX"))}, {Num(act.Num("VY"))});",
+            "MoveBy" => $"{Target()}.Position += ({Num(act.Num("X"))}, {Num(act.Num("Y"))});",
+            "SetAnimation" => $"{Target()}.PlayAnimation(\"{act.Arg("Animation")}\");",
+            "Flip" => $"{Target()}.TurnAround();",
+            "SetVisible" => $"{Target()}.Visible = {(act.Arg("Visible", "Yes") == "No" ? "false" : "true")};",
+            "SetObjectVar" => $"{Target()}.Vars[\"{act.Arg("Var")}\"] = {Num(act.Num("Value"))};",
+            "AddObjectVar" => $"{Target()}.Vars[\"{act.Arg("Var")}\"] += {Num(act.Num("Value"))};",
             "AddVar" => $"{Identifier(act.Arg("Var"))} += {Num(act.Num("Value"))};",
             "SetVar" => $"{Identifier(act.Arg("Var"))} = {Num(act.Num("Value"))};",
             "ShowMessage" => $"ShowMessage($\"{act.Arg("Text").Replace("\"", "\\\"")}\", seconds: {Num(act.Num("Seconds", 2))});",

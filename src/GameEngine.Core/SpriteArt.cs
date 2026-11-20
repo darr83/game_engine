@@ -1,8 +1,14 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace GameEngine.Core;
 
 /// <summary>A small RGBA image. Pixels are 0xAARRGGBB, row by row.</summary>
+[JsonConverter(typeof(PixelImageJsonConverter))]
 public sealed class PixelImage
 {
+    public const int MaxSize = 256;
+
     public int Width { get; }
     public int Height { get; }
     public uint[] Pixels { get; }
@@ -49,6 +55,34 @@ public sealed class PixelImage
                 if (Filled(x - 1, y) || Filled(x + 1, y) || Filled(x, y - 1) || Filled(x, y + 1))
                     this[x, y] = c;
             }
+    }
+
+    public PixelImage Clone()
+    {
+        var c = new PixelImage(Width, Height);
+        Array.Copy(Pixels, c.Pixels, Pixels.Length);
+        return c;
+    }
+
+    /// <summary>A new canvas size with the art kept at the bottom centre.</summary>
+    public PixelImage Resized(int w, int h)
+    {
+        var r = new PixelImage(w, h);
+        int ox = (w - Width) / 2, oy = h - Height;
+        for (var y = 0; y < Height; y++)
+            for (var x = 0; x < Width; x++)
+                r[x + ox, y + oy] = this[x, y];
+        return r;
+    }
+
+    /// <summary>A checkered box for objects that have no art yet.</summary>
+    public static PixelImage Placeholder(int w, int h)
+    {
+        var img = new PixelImage(Math.Max(1, w), Math.Max(1, h));
+        for (var y = 0; y < img.Height; y++)
+            for (var x = 0; x < img.Width; x++)
+                img[x, y] = ((x / 4 + y / 4) % 2 == 0) ? 0xFFB06CFFu : 0xFF6C3FB0u;
+        return img;
     }
 
     public PixelImage Mirrored()
@@ -426,5 +460,59 @@ public static class SpriteArt
             for (var x = 0; x < 16; x++)
                 img[x, y] = ((x / 4 + y / 4) % 2 == 0) ? 0xFFFF00FF : 0xFF000000;
         return img;
+    }
+}
+
+/// <summary>Stores an image compactly in project files: width, height and base64 pixels.</summary>
+public sealed class PixelImageJsonConverter : JsonConverter<PixelImage>
+{
+    public override PixelImage Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        int w = 0, h = 0;
+        string? data = null;
+        if (reader.TokenType != JsonTokenType.StartObject) throw new JsonException("Expected an image object.");
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            var name = reader.GetString();
+            reader.Read();
+            switch (name)
+            {
+                case "w": w = reader.GetInt32(); break;
+                case "h": h = reader.GetInt32(); break;
+                case "rgba": data = reader.GetString(); break;
+                default: reader.Skip(); break;
+            }
+        }
+        w = Math.Clamp(w, 1, PixelImage.MaxSize);
+        h = Math.Clamp(h, 1, PixelImage.MaxSize);
+        var img = new PixelImage(w, h);
+        if (data is not null)
+        {
+            var bytes = Convert.FromBase64String(data);
+            for (var i = 0; i < img.Pixels.Length && i * 4 + 3 < bytes.Length; i++)
+            {
+                uint r = bytes[i * 4], g = bytes[i * 4 + 1], b = bytes[i * 4 + 2], a = bytes[i * 4 + 3];
+                img.Pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+        return img;
+    }
+
+    public override void Write(Utf8JsonWriter writer, PixelImage value, JsonSerializerOptions options)
+    {
+        var bytes = new byte[value.Pixels.Length * 4];
+        for (var i = 0; i < value.Pixels.Length; i++)
+        {
+            var p = value.Pixels[i];
+            bytes[i * 4] = (byte)(p >> 16);
+            bytes[i * 4 + 1] = (byte)(p >> 8);
+            bytes[i * 4 + 2] = (byte)p;
+            bytes[i * 4 + 3] = (byte)(p >> 24);
+        }
+        writer.WriteStartObject();
+        writer.WriteNumber("w", value.Width);
+        writer.WriteNumber("h", value.Height);
+        writer.WriteString("rgba", Convert.ToBase64String(bytes));
+        writer.WriteEndObject();
     }
 }
