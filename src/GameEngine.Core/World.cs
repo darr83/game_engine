@@ -34,8 +34,17 @@ public sealed class Entity
     public string Type => Def.Id;
 
     public double X, Y, VX, VY;
-    public double W => Def.Width;
-    public double H => Def.Height;
+    /// <summary>X and Y are the collision box's top-left corner; W and H its size.</summary>
+    public double W => Def.Box.W;
+    public double H => Def.Box.H;
+
+    /// <summary>Where to draw the sprite, which may be bigger than the collision box.</summary>
+    public (double X, double Y) SpritePosition(bool mirrored)
+    {
+        var b = Def.Box;
+        var offsetX = mirrored ? Def.Width - b.X - b.W : b.X;
+        return (X - offsetX, Y - b.Y);
+    }
     public double PrevX, PrevY;
 
     public int Facing = 1;
@@ -224,8 +233,12 @@ public sealed class World
         UpdateCamera();
     }
 
+    /// <summary>Creates a live object; x and y are where its sprite's top-left corner goes.</summary>
     Entity CreateEntity(ObjectType def, Instance source, double x, double y)
     {
+        var box = def.Box;
+        x += box.X;
+        y += box.Y;
         var e = new Entity
         {
             Id = _nextId++,
@@ -556,8 +569,10 @@ public sealed class World
                 var def = _project.FindType(a.Arg("Type"));
                 var at = Target();
                 if (def is null) break;
-                double x = at is null ? CameraX + ViewWidth / 2 : at.X + at.W / 2 - def.Width / 2.0;
-                double y = at is null ? CameraY + ViewHeight / 2 : at.Y + at.H - def.Height;
+                // centre the new object's collision box on the target, feet level with its feet
+                var box = def.Box;
+                double x = (at is null ? CameraX + ViewWidth / 2 : at.X + at.W / 2) - box.W / 2.0 - box.X;
+                double y = (at is null ? CameraY + ViewHeight / 2 : at.Y + at.H) - box.H - box.Y;
                 _spawned.Add(CreateEntity(def, new Instance { Type = def.Id }, x, y));
                 break;
             }

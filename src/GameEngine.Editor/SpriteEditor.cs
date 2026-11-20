@@ -15,7 +15,7 @@ using GameEngine.Desktop;
 
 namespace GameEngine.Editor;
 
-public enum PixelTool { Pencil, Eraser, Fill, Picker }
+public enum PixelTool { Pencil, Eraser, Fill, Picker, Collision }
 
 /// <summary>A zoomed-in canvas for drawing one frame pixel by pixel.</summary>
 public sealed class PixelCanvas : Control
@@ -48,12 +48,32 @@ public sealed class PixelCanvas : Control
     public event Action? Changed;
     public event Action<uint>? ColorPicked;
 
+    /// <summary>The object whose collision box is shown and edited with the Collision tool.</summary>
+    public ObjectType? BoxOwner { get; set; }
+    public event Action? BoxChanging;
+    public event Action? BoxChanged;
+
+    // collision box dragging
+    enum BoxDrag { None, Move, Resize, Draw }
+    BoxDrag _boxDrag;
+    bool _dragLeft, _dragRight, _dragTop, _dragBottom, _boxSnapshotTaken;
+    (int X, int Y, int W, int H) _boxStart;
+    (int X, int Y) _gridStart;
+    const double HandleSize = 8;
+
     (double scale, Point origin) Layout()
     {
-        var fit = Math.Min((Bounds.Width - 24) / _image.Width, (Bounds.Height - 24) / _image.Height);
+        var fit = Math.Min((Bounds.Width - 24) / _image.Width, (Bounds.Height - 64) / _image.Height);
         var scale = fit >= 1 ? Math.Floor(fit) : Math.Max(0.1, fit);
         var origin = new Point(Math.Round((Bounds.Width - _image.Width * scale) / 2), Math.Round((Bounds.Height - _image.Height * scale) / 2));
         return (scale, origin);
+    }
+
+    /// <summary>Where a point in sprite pixels appears on this control.</summary>
+    public Point ToControl(double x, double y)
+    {
+        var (scale, o) = Layout();
+        return new Point(o.X + x * scale, o.Y + y * scale);
     }
 
     (int x, int y)? PixelAt(Point p)
@@ -100,17 +120,138 @@ public sealed class PixelCanvas : Control
         }
         ctx.DrawRectangle(null, new Pen(UiTheme.Border, 1), rect.Inflate(0.5));
 
-        if (_hover is { } h)
+        if (BoxOwner is not null) DrawBox(ctx, BoxRect(scale, o));
+
+        if (_hover is { } h && Tool != PixelTool.Collision)
         {
             var cell = new Rect(rect.X + h.x * scale, rect.Y + h.y * scale, scale, scale);
             ctx.DrawRectangle(null, new Pen(Brushes.White, 1), cell);
         }
     }
 
+    // ------------------------------------------------------------------ collision box
+
+    static readonly IBrush BoxBrush = new SolidColorBrush(Avalonia.Media.Color.Parse("#FF4FD8"));
+
+    Rect BoxRect(double scale, Point o)
+    {
+        var b = BoxOwner!.Box;
+        return new Rect(o.X + b.X * scale, o.Y + b.Y * scale, b.W * scale, b.H * scale);
+    }
+
+    static IEnumerable<(Point p, bool l, bool r, bool t, bool b)> Handles(Rect r) => new[]
+    {
+        (r.TopLeft, true, false, true, false), (new Point(r.Center.X, r.Top), false, false, true, false),
+        (r.TopRight, false, true, true, false), (new Point(r.Right, r.Center.Y), false, true, false, false),
+        (r.BottomRight, false, true, false, true), (new Point(r.Center.X, r.Bottom), false, false, false, true),
+        (r.BottomLeft, true, false, false, true), (new Point(r.Left, r.Center.Y), true, false, false, false),
+    };
+
+    void DrawBox(DrawingContext ctx, Rect r)
+    {
+        var editing = Tool == PixelTool.Collision;
+        ctx.FillRectangle(new SolidColorBrush(Avalonia.Media.Color.Parse("#FF4FD8"), editing ? 0.07 : 0.0), r);
+        var pen = editing ? new Pen(BoxBrush, 2) : new Pen(BoxBrush, 1) { DashStyle = new DashStyle(new double[] { 4, 3 }, 0) };
+        ctx.DrawRectangle(null, pen, r);
+        if (!editing) return;
+        foreach (var h in Handles(r))
+            ctx.DrawRectangle(Brushes.White, new Pen(BoxBrush, 2), new Rect(h.p.X - HandleSize / 2, h.p.Y - HandleSize / 2, HandleSize, HandleSize), 2, 2);
+        // size readout in the canvas corner, where it never covers the art
+        var b = BoxOwner!.Box;
+        var label = SceneRenderer.Text($"Collision box  {b.X}, {b.Y}  ·  {b.W} × {b.H}", 11, Brushes.White, FontWeight.SemiBold);
+        var tag = new Rect(10, 8, label.Width + 12, label.Height + 6);
+        ctx.DrawRectangle(BoxBrush, null, tag, 4, 4);
+        ctx.DrawText(label, new Point(tag.X + 6, tag.Y + 3));
+    }
+
+    /// <summary>Nearest pixel grid line (0..size) under a screen point.</summary>
+    (int X, int Y) GridAt(Point p)
+    {
+        var (scale, o) = Layout();
+        return ((int)Math.Clamp(Math.Round((p.X - o.X) / scale), 0, _image.Width),
+                (int)Math.Clamp(Math.Round((p.Y - o.Y) / scale), 0, _image.Height));
+    }
+
+    void StartBoxDrag(Point p)
+    {
+        var (scale, o) = Layout();
+        var r = BoxRect(scale, o);
+        _boxStart = BoxOwner!.Box;
+        _gridStart = GridAt(p);
+        _boxSnapshotTaken = false;
+        _dragLeft = _dragRight = _dragTop = _dragBottom = false;
+
+        foreach (var h in Handles(r))
+            if (Math.Abs(p.X - h.p.X) <= HandleSize && Math.Abs(p.Y - h.p.Y) <= HandleSize)
+            {
+                (_dragLeft, _dragRight, _dragTop, _dragBottom) = (h.l, h.r, h.t, h.b);
+                _boxDrag = BoxDrag.Resize;
+                return;
+            }
+        _boxDrag = r.Contains(p) ? BoxDrag.Move : BoxDrag.Draw;
+    }
+
+    void ContinueBoxDrag(Point p)
+    {
+        var g = GridAt(p);
+        var s = _boxStart;
+        int x = s.X, y = s.Y, w = s.W, h = s.H;
+        switch (_boxDrag)
+        {
+            case BoxDrag.Move:
+                x = Math.Clamp(s.X + g.X - _gridStart.X, 0, _image.Width - s.W);
+                y = Math.Clamp(s.Y + g.Y - _gridStart.Y, 0, _image.Height - s.H);
+                break;
+            case BoxDrag.Resize:
+                int left = s.X, top = s.Y, right = s.X + s.W, bottom = s.Y + s.H;
+                if (_dragLeft) left = Math.Min(g.X, right - 1);
+                if (_dragRight) right = Math.Max(g.X, left + 1);
+                if (_dragTop) top = Math.Min(g.Y, bottom - 1);
+                if (_dragBottom) bottom = Math.Max(g.Y, top + 1);
+                (x, y, w, h) = (left, top, right - left, bottom - top);
+                break;
+            case BoxDrag.Draw:
+                x = Math.Min(g.X, _gridStart.X);
+                y = Math.Min(g.Y, _gridStart.Y);
+                w = Math.Max(1, Math.Abs(g.X - _gridStart.X));
+                h = Math.Max(1, Math.Abs(g.Y - _gridStart.Y));
+                break;
+        }
+        if ((x, y, w, h) == BoxOwner!.Box) return;
+        if (!_boxSnapshotTaken) { BoxChanging?.Invoke(); _boxSnapshotTaken = true; }
+        BoxOwner.SetBox(x, y, w, h);
+        InvalidateVisual();
+        BoxChanged?.Invoke();
+    }
+
+    void UpdateBoxCursor(Point p)
+    {
+        if (Tool != PixelTool.Collision || BoxOwner is null) { Cursor = new Cursor(StandardCursorType.Cross); return; }
+        var (scale, o) = Layout();
+        var r = BoxRect(scale, o);
+        foreach (var h in Handles(r))
+            if (Math.Abs(p.X - h.p.X) <= HandleSize && Math.Abs(p.Y - h.p.Y) <= HandleSize)
+            {
+                Cursor = new Cursor((h.l || h.r) && (h.t || h.b)
+                    ? (h.l == h.t ? StandardCursorType.TopLeftCorner : StandardCursorType.TopRightCorner)
+                    : h.l || h.r ? StandardCursorType.SizeWestEast : StandardCursorType.SizeNorthSouth);
+                return;
+            }
+        Cursor = new Cursor(r.Contains(p) ? StandardCursorType.SizeAll : StandardCursorType.Cross);
+    }
+
+    // ------------------------------------------------------------------ mouse
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         var props = e.GetCurrentPoint(this).Properties;
+        if (Tool == PixelTool.Collision && BoxOwner is not null && props.IsLeftButtonPressed)
+        {
+            StartBoxDrag(e.GetPosition(this));
+            e.Pointer.Capture(this);
+            return;
+        }
         if (PixelAt(e.GetPosition(this)) is not { } p) return;
         _erasing = props.IsRightButtonPressed || Tool == PixelTool.Eraser;
 
@@ -139,6 +280,8 @@ public sealed class PixelCanvas : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+        if (_boxDrag != BoxDrag.None) { ContinueBoxDrag(e.GetPosition(this)); return; }
+        UpdateBoxCursor(e.GetPosition(this));
         var p = PixelAt(e.GetPosition(this));
         if (p != _hover) { _hover = p; InvalidateVisual(); }
         if (!_drawing || p is not { } now) return;
@@ -152,6 +295,7 @@ public sealed class PixelCanvas : Control
         base.OnPointerReleased(e);
         _drawing = false;
         _last = null;
+        _boxDrag = BoxDrag.None;
         e.Pointer.Capture(null);
     }
 
@@ -235,7 +379,11 @@ public sealed class SpriteEditor : UserControl
     readonly TextBlock _message = new() { FontSize = 12, Foreground = UiTheme.Muted, TextWrapping = TextWrapping.Wrap };
     readonly DispatcherTimer _timer;
     readonly NumericUpDown _width, _height, _sliceW, _sliceH;
-    readonly Stack<List<SpriteAnimation>> _undo = new(), _redo = new();
+    readonly Stack<UndoState> _undo = new(), _redo = new();
+    readonly NumericUpDown _boxX, _boxY, _boxW, _boxH;
+    bool _updatingBoxFields;
+
+    sealed record UndoState(List<SpriteAnimation> Animations, int Width, int Height, int BoxX, int BoxY, int BoxW, int BoxH);
     int _anim, _frame;
     bool _onion = true;
     double _previewTime;
@@ -250,11 +398,18 @@ public sealed class SpriteEditor : UserControl
         _height = Ui.Number(type.Height, 1, PixelImage.MaxSize, 1, _ => { });
         _sliceW = Ui.Number(0, 0, PixelImage.MaxSize, 1, _ => { });
         _sliceH = Ui.Number(0, 0, PixelImage.MaxSize, 1, _ => { });
-        foreach (var n in new[] { _width, _height, _sliceW, _sliceH }) n.ShowButtonSpinner = false;
+        _boxX = Ui.Number(0, 0, PixelImage.MaxSize, 1, _ => BoxFieldsChanged());
+        _boxY = Ui.Number(0, 0, PixelImage.MaxSize, 1, _ => BoxFieldsChanged());
+        _boxW = Ui.Number(1, 1, PixelImage.MaxSize, 1, _ => BoxFieldsChanged());
+        _boxH = Ui.Number(1, 1, PixelImage.MaxSize, 1, _ => BoxFieldsChanged());
+        foreach (var n in new[] { _width, _height, _sliceW, _sliceH, _boxX, _boxY, _boxW, _boxH }) n.ShowButtonSpinner = false;
 
         _canvas.Changing += SaveUndo;
         _canvas.Changed += () => { RefreshFrames(); RefreshUsedColors(); Edited?.Invoke(); };
         _canvas.ColorPicked += SetColor;
+        _canvas.BoxOwner = _type;
+        _canvas.BoxChanging += SaveUndo;
+        _canvas.BoxChanged += () => { RefreshBoxFields(); Edited?.Invoke(); };
 
         var left = BuildAnimationPanel();
         var center = BuildCenter();
@@ -275,6 +430,7 @@ public sealed class SpriteEditor : UserControl
         SetTool(PixelTool.Pencil);
         SetColor(0xFF1B1D2A);
         RefreshAnimations();
+        RefreshBoxFields();
     }
 
     /// <summary>Raised after any change to the sprite.</summary>
@@ -324,6 +480,7 @@ public sealed class SpriteEditor : UserControl
         Tool(PixelTool.Eraser, Ui.Icons.Erase, "Eraser", "Erase pixels (E)");
         Tool(PixelTool.Fill, Ui.Icons.Fill, "Fill", "Fill an area with the colour (F)");
         Tool(PixelTool.Picker, Ui.Icons.Picker, "Pick", "Pick a colour from the sprite (I)");
+        Tool(PixelTool.Collision, Ui.Icons.Fit, "Collision", "Drag the pink outline to set what counts as touching (C). Drag inside to move it, drag a handle to resize, or drag outside to draw a new box.");
         tools.Children.Add(Ui.Divider(Orientation.Vertical));
 
         var mirror = new ToggleButton { Content = "Mirror", Padding = new Thickness(10, 5) };
@@ -404,7 +561,7 @@ public sealed class SpriteEditor : UserControl
 
         stack.Children.Add(Ui.Divider());
         stack.Children.Add(Ui.Heading("Size"));
-        stack.Children.Add(Ui.Label("Also the collision box. Art stays anchored to the bottom.", 12, UiTheme.Muted));
+        stack.Children.Add(Ui.Label("The drawing canvas. Art stays anchored to the bottom when resized.", 12, UiTheme.Muted));
         var size = new SpacedGrid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnGap = 8 };
         size.Children.Add(Ui.Field("Width", _width));
         var h = Ui.Field("Height", _height);
@@ -416,14 +573,46 @@ public sealed class SpriteEditor : UserControl
         stack.Children.Add(resize);
 
         stack.Children.Add(Ui.Divider());
+        stack.Children.Add(Ui.Heading("Collision box"));
+        stack.Children.Add(Ui.Label("What counts as touching: walls, floors and other objects. Use the Collision tool to drag the pink outline.", 12, UiTheme.Muted));
+        var boxGrid = new SpacedGrid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnGap = 8 };
+        var boxLeft = new StackPanel { Spacing = 8 };
+        var boxRight = new StackPanel { Spacing = 8 };
+        boxLeft.Children.Add(Ui.Field("X", _boxX));
+        boxLeft.Children.Add(Ui.Field("Width", _boxW));
+        boxRight.Children.Add(Ui.Field("Y", _boxY));
+        boxRight.Children.Add(Ui.Field("Height", _boxH));
+        Grid.SetColumn(boxRight, 1);
+        boxGrid.Children.Add(boxLeft);
+        boxGrid.Children.Add(boxRight);
+        stack.Children.Add(boxGrid);
+        var boxButtons = new SpacedGrid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnGap = 8 };
+        var editBox = new Button { Content = "Edit on canvas", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        editBox.Click += (_, _) => SetTool(PixelTool.Collision);
+        var whole = new Button { Content = "Whole sprite", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        ToolTip.SetTip(whole, "Make the box cover the whole sprite");
+        whole.Click += (_, _) =>
+        {
+            SaveUndo();
+            _type.SetBox(0, 0, _type.Width, _type.Height);
+            RefreshBoxFields();
+            _canvas.InvalidateVisual();
+            Edited?.Invoke();
+        };
+        Grid.SetColumn(whole, 1);
+        boxButtons.Children.Add(editBox);
+        boxButtons.Children.Add(whole);
+        stack.Children.Add(boxButtons);
+
+        stack.Children.Add(Ui.Divider());
         stack.Children.Add(Ui.Heading("Import image"));
         stack.Children.Add(Ui.Label("PNG up to 256 × 256. For a sprite sheet, give the size of one frame; frames are read left to right, top to bottom.", 12, UiTheme.Muted));
-        var slice = new SpacedGrid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnGap = 8 };
-        slice.Children.Add(Ui.Field("Frame width", _sliceW));
-        var sh = Ui.Field("Frame height", _sliceH);
-        Grid.SetColumn(sh, 1);
-        slice.Children.Add(sh);
-        stack.Children.Add(slice);
+        var slice2 = new SpacedGrid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnGap = 8 };
+        slice2.Children.Add(Ui.Field("Frame width", _sliceW));
+        var sh2 = Ui.Field("Frame height", _sliceH);
+        Grid.SetColumn(sh2, 1);
+        slice2.Children.Add(sh2);
+        stack.Children.Add(slice2);
         var import = new Button { Content = "Import PNG into this animation…", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
         import.Click += async (_, _) => await ImportPng();
         stack.Children.Add(import);
@@ -451,9 +640,10 @@ public sealed class SpriteEditor : UserControl
 
     // ------------------------------------------------------------------ state
 
-    void SetTool(PixelTool tool)
+    public void SetTool(PixelTool tool)
     {
         _canvas.Tool = tool;
+        _canvas.InvalidateVisual();
         foreach (var (t, b) in _toolButtons)
         {
             b.Background = t == tool ? UiTheme.AccentSoft : Brushes.Transparent;
@@ -478,13 +668,17 @@ public sealed class SpriteEditor : UserControl
         else if (!ctrl && e.Key == Key.E) SetTool(PixelTool.Eraser);
         else if (!ctrl && e.Key == Key.F) SetTool(PixelTool.Fill);
         else if (!ctrl && e.Key == Key.I) SetTool(PixelTool.Picker);
+        else if (!ctrl && e.Key == Key.C) SetTool(PixelTool.Collision);
         else if (!ctrl && e.Key == Key.Left) { _frame = Math.Max(0, _frame - 1); RefreshFrames(); }
         else if (!ctrl && e.Key == Key.Right) { _frame = Math.Min(Anim.Frames.Count - 1, _frame + 1); RefreshFrames(); }
     }
 
+    UndoState Capture() => new(_type.Animations.Select(a => a.Clone()).ToList(), _type.Width, _type.Height,
+        _type.CollisionX, _type.CollisionY, _type.CollisionWidth, _type.CollisionHeight);
+
     void SaveUndo()
     {
-        _undo.Push(_type.Animations.Select(a => a.Clone()).ToList());
+        _undo.Push(Capture());
         if (_undo.Count > 100) { var keep = _undo.Take(100).Reverse().ToList(); _undo.Clear(); foreach (var k in keep) _undo.Push(k); }
         _redo.Clear();
     }
@@ -492,19 +686,47 @@ public sealed class SpriteEditor : UserControl
     void Undo() => Swap(_undo, _redo);
     void Redo() => Swap(_redo, _undo);
 
-    void Swap(Stack<List<SpriteAnimation>> from, Stack<List<SpriteAnimation>> to)
+    void Swap(Stack<UndoState> from, Stack<UndoState> to)
     {
         if (from.Count == 0) return;
-        to.Push(_type.Animations.Select(a => a.Clone()).ToList());
-        _type.Animations = from.Pop();
-        var first = _type.Animations.SelectMany(a => a.Frames).FirstOrDefault();
-        if (first is not null) { _type.Width = first.Width; _type.Height = first.Height; }
+        to.Push(Capture());
+        var s = from.Pop();
+        _type.Animations = s.Animations;
+        (_type.Width, _type.Height) = (s.Width, s.Height);
+        (_type.CollisionX, _type.CollisionY, _type.CollisionWidth, _type.CollisionHeight) = (s.BoxX, s.BoxY, s.BoxW, s.BoxH);
+        _width.Value = s.Width;
+        _height.Value = s.Height;
         RefreshAnimations();
+        RefreshBoxFields();
+        Edited?.Invoke();
+    }
+
+    void RefreshBoxFields()
+    {
+        _updatingBoxFields = true;
+        var b = _type.Box;
+        _boxX.Maximum = _type.Width - 1;
+        _boxY.Maximum = _type.Height - 1;
+        _boxW.Maximum = _type.Width;
+        _boxH.Maximum = _type.Height;
+        (_boxX.Value, _boxY.Value, _boxW.Value, _boxH.Value) = (b.X, b.Y, b.W, b.H);
+        _updatingBoxFields = false;
+    }
+
+    void BoxFieldsChanged()
+    {
+        if (_updatingBoxFields) return;
+        var box = ((int)(_boxX.Value ?? 0), (int)(_boxY.Value ?? 0), (int)(_boxW.Value ?? 1), (int)(_boxH.Value ?? 1));
+        if (box == _type.Box) return;
+        SaveUndo();
+        _type.SetBox(box.Item1, box.Item2, box.Item3, box.Item4);
+        _canvas.InvalidateVisual();
         Edited?.Invoke();
     }
 
     void Changed()
     {
+        RefreshBoxFields();
         RefreshFrames();
         RefreshUsedColors();
         Edited?.Invoke();

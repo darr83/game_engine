@@ -49,6 +49,9 @@ public sealed class LevelCanvas : Control
     public event Action<string>? StatusChanged;
 
     public Tool Tool { get; set; } = Tool.Select;
+
+    /// <summary>Outlines each object's collision box.</summary>
+    public bool ShowBoxes { get; set; }
     public string PaintType { get; set; } = "Grass";
     public Instance? Selected { get; private set; }
     int TileSize => _project.TileSize;
@@ -152,6 +155,17 @@ public sealed class LevelCanvas : Control
                 var def = inst.def!;
                 if (def.Has(Behaviour.MovingPlatform)) DrawPlatformPath(ctx, inst.inst, def, px);
                 SceneRenderer.DrawSprite(ctx, def.Icon, false, inst.inst.X, inst.inst.Y, def.Width, def.Height);
+            }
+
+            if (ShowBoxes)
+            {
+                var boxPen = new Pen(new SolidColorBrush(Color.Parse("#FF4FD8")), 1.5 * px);
+                foreach (var inst in _level.Instances)
+                    if (_project.FindType(inst.Type) is { } t && !t.Has(Behaviour.Decoration))
+                    {
+                        var b = t.Box;
+                        ctx.DrawRectangle(null, boxPen, new Rect(inst.X + b.X, inst.Y + b.Y, b.W, b.H));
+                    }
             }
 
             // level edge

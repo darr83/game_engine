@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -180,6 +181,10 @@ public sealed class MainWindow : Window
         Add(Tool.Erase, Ui.Icons.Erase, "Erase", "Erase objects (E)");
         row.Children.Add(Ui.Divider(Orientation.Vertical));
         row.Children.Add(Ui.IconButton(Ui.Icons.Fit, "Fit level to view", () => _canvas.FitToView()));
+        var boxes = new ToggleButton { Content = "Collision boxes", Padding = new Thickness(10, 5), Margin = new Thickness(4, 0, 0, 0) };
+        ToolTip.SetTip(boxes, "Show each object's collision box. While playing, press F2.");
+        boxes.IsCheckedChanged += (_, _) => { _canvas.ShowBoxes = boxes.IsChecked == true; _canvas.InvalidateVisual(); };
+        row.Children.Add(boxes);
         return row;
     }
 

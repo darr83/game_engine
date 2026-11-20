@@ -140,6 +140,11 @@ public sealed class GameWindow : Window
             e.Handled = true;
             AudioPlayer.Shared.Muted = !AudioPlayer.Shared.Muted;
         }
+        else if (e.Key == Key.F2)
+        {
+            e.Handled = true;
+            SceneRenderer.ShowCollisionBoxes = !SceneRenderer.ShowCollisionBoxes;
+        }
         else if (e.Key == Key.F11 || (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Alt)))
         {
             e.Handled = true;

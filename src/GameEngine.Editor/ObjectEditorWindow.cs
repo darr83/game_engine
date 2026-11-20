@@ -73,6 +73,8 @@ public sealed class ObjectEditorWindow : Window
     /// <summary>The working copy (for tests and previews).</summary>
     public ObjectType Working => _type;
 
+    public SpriteEditor Sprite => _sprite;
+
     public void ShowPage(int index)
     {
         _sprite.IsVisible = index == 0;

@@ -26,12 +26,15 @@ Drag premade objects (player, ground, moving platforms, coins, enemies, springs,
 - **Make your own objects, or change any premade one**: double-click an object (or press **New**) to open the object editor.
   - **Sprite**: a pixel editor with pencil, eraser, fill, colour picker, mirror drawing and onion skin. Named animations with any number of frames, frame rate and looping, and a live preview. Import a PNG, or slice a sprite sheet into frames.
   - **Behaviour**: tick any mix of Platformer, Solid, Jump-through, Moving platform, Patrol, Spring, Bullet, Float, Gravity and Decoration, then tune their settings (speed, jump power, gravity, double jump, bullet angle, float distance…).
+  - **Collision box**: pick the **Collision** tool (**C**) and drag the pink outline. Drag inside it to move it, drag a handle to resize it, or drag outside it to draw a new one. You can also type exact values, or reset it to the whole sprite. The premade characters already have boxes that fit their art.
   - **Variables**: numbers each copy keeps for itself, such as Health or Ammo.
   - Animations named Idle, Run, Jump and Fall play automatically for moving characters; anything else plays Default, or whatever an event picks.
 
   ![Sprite editor](docs/object-sprite.png)
 
   ![Behaviour settings](docs/object-behaviour.png)
+
+  ![Collision box](docs/object-collision.png)
 
 - **Sound and music** (the **Sounds** tab):
   - Make retro sound effects from presets (Coin, Jump, Hit, Explosion, Power-up, Laser, Blip). Each click gives a new variation, or press "Surprise me". Tune them with sliders for pitch, slide, vibrato, pitch jump and fade, with a waveform view.
@@ -104,6 +107,7 @@ On Windows PowerShell:
 | Play | **F5** |
 | Edit an object's sprite and behaviour | Double-click it in the Objects panel, right-click it, or use the button in the inspector |
 | Make a new object | **New** at the top of the Objects panel |
+| See collision boxes | **Collision boxes** in the level toolbar, or **F2** while playing |
 
 Moving platforms show their path as a dotted line with a faded copy at the far end. Change **Distance X/Y** in the inspector to set where they travel.
 
@@ -128,7 +132,6 @@ tests/
 
 ## Roadmap
 
-- Separate collision boxes and origin points for sprites
 - Write your own C# code inside events, compiled with Roslyn
 - More events: timers per object, camera shake, follow another object
 - Tilemap auto-tiling, parallax backgrounds and layers

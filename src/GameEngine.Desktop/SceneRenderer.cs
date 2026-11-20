@@ -68,6 +68,9 @@ public static class SceneRenderer
     public static double GameScale(World w, double viewportHeight) =>
         Math.Max(0.5, viewportHeight / Math.Min(w.LevelHeight, 20 * w.Project.TileSize));
 
+    /// <summary>Outlines every collision box while playing (toggled with F2 in play windows).</summary>
+    public static bool ShowCollisionBoxes { get; set; }
+
     public static void DrawWorld(DrawingContext ctx, World w, Rect bounds)
     {
         var scale = GameScale(w, bounds.Height);
@@ -92,10 +95,16 @@ public static class SceneRenderer
             {
                 if (!e.Visible || e.X + e.W < camX - 64 || e.X > camX + w.ViewWidth + 64) continue;
                 var (image, mirror) = World.SpriteFor(e);
-                double y = e.Y, h = e.H;
-                if (e.Squash > 0) { y += 4; h -= 4; }
-                double left = Sx(e.X), top = Sy(y);
-                DrawSprite(ctx, image, mirror, left, top, Sx(e.X + e.W) - left, Sy(y + h) - top);
+                var (sx, sy) = e.SpritePosition(mirror);
+                double sw = e.Def.Width, sh = e.Def.Height;
+                if (e.Squash > 0) { sy += 4; sh -= 4; }
+                double left = Sx(sx), top = Sy(sy);
+                DrawSprite(ctx, image, mirror, left, top, Sx(sx + sw) - left, Sy(sy + sh) - top);
+                if (ShowCollisionBoxes)
+                {
+                    double bl = Sx(e.X), bt = Sy(e.Y);
+                    ctx.DrawRectangle(null, new Pen(Brushes.Magenta, 1), new Rect(bl + 0.5, bt + 0.5, Sx(e.X + e.W) - bl - 1, Sy(e.Y + e.H) - bt - 1));
+                }
             }
         }
 

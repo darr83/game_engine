@@ -77,6 +77,7 @@ public static class SampleProject
         {
             Id = "Gem", Name = "Gem", Category = "Items", Description = "A custom object: worth 10 points and floats gently.",
             Width = 12, Height = 12, Behaviours = Behaviour.Float,
+            CollisionX = 2, CollisionY = 2, CollisionWidth = 8, CollisionHeight = 8,
             Settings = { ["FloatY"] = 3, ["Period"] = 1.6 },
             Animations = { new SpriteAnimation { Name = "Default", Fps = 6, Frames = { Frame(0), Frame(1), Frame(2), Frame(-1) } } },
         };

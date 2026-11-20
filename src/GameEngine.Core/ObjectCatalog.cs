@@ -124,9 +124,44 @@ public sealed class ObjectType
     public string Category { get; set; } = "My objects";
     public string Description { get; set; } = "";
 
-    /// <summary>Collision box size in pixels; also the sprite's canvas size.</summary>
+    /// <summary>The sprite's canvas size in pixels.</summary>
     public int Width { get; set; } = 16;
     public int Height { get; set; } = 16;
+
+    /// <summary>
+    /// Collision box inside the sprite, in pixels from its top-left corner.
+    /// A width or height of 0 means the box covers the whole sprite.
+    /// </summary>
+    public int CollisionX { get; set; }
+    public int CollisionY { get; set; }
+    public int CollisionWidth { get; set; }
+    public int CollisionHeight { get; set; }
+
+    /// <summary>The collision box, clamped to the sprite.</summary>
+    [JsonIgnore]
+    public (int X, int Y, int W, int H) Box
+    {
+        get
+        {
+            if (CollisionWidth <= 0 || CollisionHeight <= 0) return (0, 0, Width, Height);
+            var x = Math.Clamp(CollisionX, 0, Width - 1);
+            var y = Math.Clamp(CollisionY, 0, Height - 1);
+            return (x, y, Math.Clamp(CollisionWidth, 1, Width - x), Math.Clamp(CollisionHeight, 1, Height - y));
+        }
+    }
+
+    [JsonIgnore] public bool HasCustomBox => Box != (0, 0, Width, Height);
+
+    /// <summary>Sets the collision box; a box covering the whole sprite is stored as "whole sprite".</summary>
+    public void SetBox(int x, int y, int w, int h)
+    {
+        x = Math.Clamp(x, 0, Width - 1);
+        y = Math.Clamp(y, 0, Height - 1);
+        w = Math.Clamp(w, 1, Width - x);
+        h = Math.Clamp(h, 1, Height - y);
+        if (x == 0 && y == 0 && w == Width && h == Height) (CollisionX, CollisionY, CollisionWidth, CollisionHeight) = (0, 0, 0, 0);
+        else (CollisionX, CollisionY, CollisionWidth, CollisionHeight) = (x, y, w, h);
+    }
 
     public Behaviour Behaviours { get; set; }
 
@@ -165,6 +200,7 @@ public sealed class ObjectType
     {
         Id = Id, Name = Name, Category = Category, Description = Description,
         Width = Width, Height = Height, Behaviours = Behaviours,
+        CollisionX = CollisionX, CollisionY = CollisionY, CollisionWidth = CollisionWidth, CollisionHeight = CollisionHeight,
         Settings = new Dictionary<string, double>(Settings),
         Variables = new Dictionary<string, double>(Variables),
         Animations = Animations.Select(a => a.Clone()).ToList(),
@@ -175,11 +211,16 @@ public sealed class ObjectType
     {
         width = Math.Clamp(width, 1, PixelImage.MaxSize);
         height = Math.Clamp(height, 1, PixelImage.MaxSize);
+        var custom = HasCustomBox;
+        var box = Box;
         foreach (var a in Animations)
             for (var i = 0; i < a.Frames.Count; i++)
                 a.Frames[i] = a.Frames[i].Resized(width, height);
+        // the art moves to stay bottom-centred, so the collision box moves with it
+        var (ox, oy) = ((width - Width) / 2, height - Height);
         Width = width;
         Height = height;
+        if (custom) SetBox(box.X + ox, box.Y + oy, box.W, box.H);
     }
 }
 
@@ -223,9 +264,22 @@ public static class BuiltInObjects
         Name = name, Fps = fps, Frames = frames.Select(f => f.Clone()).ToList(),
     };
 
-    static ObjectType Make(string id, string name, string category, string description, int w, int h, Behaviour b, params SpriteAnimation[] anims) => new()
+    static ObjectType Make(string id, string name, string category, string description, int w, int h, Behaviour b, params SpriteAnimation[] anims)
     {
-        Id = id, Name = name, Category = category, Description = description,
-        Width = w, Height = h, Behaviours = b, Animations = anims.ToList(),
-    };
+        var t = new ObjectType
+        {
+            Id = id, Name = name, Category = category, Description = description,
+            Width = w, Height = h, Behaviours = b, Animations = anims.ToList(),
+        };
+        // collision boxes that fit the art, so touching feels fair
+        switch (id)
+        {
+            case "Player": t.SetBox(1, 1, 10, 15); break;
+            case "Slime": t.SetBox(1, 3, 14, 9); break;
+            case "Coin": t.SetBox(1, 1, 8, 10); break;
+            case "Spikes": t.SetBox(1, 3, 14, 5); break;
+            case "Flag": t.SetBox(1, 0, 14, 32); break;
+        }
+        return t;
+    }
 }
